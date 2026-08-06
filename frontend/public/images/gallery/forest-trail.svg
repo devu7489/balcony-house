@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800">
+  <defs>
+    <linearGradient id="forest" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#E7DFD3"/>
+      <stop offset="100%" stop-color="#6B705C"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="800" fill="url(#forest)"/>
+  <g fill="#2B2B29" opacity="0.75">
+    <polygon points="120,560 180,380 240,560"/>
+    <polygon points="220,600 290,360 360,600"/>
+    <polygon points="340,560 400,400 460,560"/>
+    <polygon points="460,600 540,360 620,600"/>
+    <polygon points="580,560 650,400 720,560"/>
+  </g>
+  <path d="M380 800 C 400 650, 420 600, 400 500 C 380 420, 420 380, 400 300" stroke="#FAF7F2" stroke-width="14" fill="none" opacity="0.6"/>
+  <rect x="0" y="700" width="800" height="100" fill="#2B2B29" opacity="0.7"/>
+  <text x="400" y="760" text-anchor="middle" font-family="Georgia, serif" font-size="34" fill="#FAF7F2">Pine Forest Trail</text>
+</svg>

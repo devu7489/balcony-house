@@ -13,3 +13,12 @@ body {
 h1, h2, h3, .font-heading {
   @apply font-serif;
 }
+
+@keyframes kenburns {
+  from { transform: scale(1); }
+  to { transform: scale(1.08); }
+}
+
+.animate-kenburns {
+  animation: kenburns 6s ease-out forwards;
+}

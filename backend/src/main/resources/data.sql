@@ -32,13 +32,33 @@ INSERT INTO cafe_items (name, description, image_url, category)
 SELECT 'Garden Breakfast Bowl', 'Seasonal, local, and made to be eaten slowly with a view.', '/images/cafe/breakfast-bowl.jpg', 'breakfast'
 WHERE NOT EXISTS (SELECT 1 FROM cafe_items WHERE name = 'Garden Breakfast Bowl');
 
-INSERT INTO gallery_images (image_url, caption, category, sort_order)
-SELECT '/images/gallery/balcony-sunrise.jpg', 'Balcony at sunrise', 'mountains', 1
-WHERE NOT EXISTS (SELECT 1 FROM gallery_images WHERE image_url = '/images/gallery/balcony-sunrise.jpg');
+-- Migrate placeholder paths from .jpg (never populated) to the generated .svg placeholders
+UPDATE gallery_images SET image_url = '/images/gallery/balcony-sunrise.svg' WHERE image_url = '/images/gallery/balcony-sunrise.jpg';
+UPDATE gallery_images SET image_url = '/images/gallery/reading-corner.svg' WHERE image_url = '/images/gallery/reading-corner.jpg';
 
 INSERT INTO gallery_images (image_url, caption, category, sort_order)
-SELECT '/images/gallery/reading-corner.jpg', 'A quiet reading corner', 'rooms', 2
-WHERE NOT EXISTS (SELECT 1 FROM gallery_images WHERE image_url = '/images/gallery/reading-corner.jpg');
+SELECT '/images/gallery/balcony-sunrise.svg', 'Balcony at sunrise', 'mountains', 1
+WHERE NOT EXISTS (SELECT 1 FROM gallery_images WHERE image_url = '/images/gallery/balcony-sunrise.svg');
+
+INSERT INTO gallery_images (image_url, caption, category, sort_order)
+SELECT '/images/gallery/reading-corner.svg', 'A quiet reading corner', 'rooms', 2
+WHERE NOT EXISTS (SELECT 1 FROM gallery_images WHERE image_url = '/images/gallery/reading-corner.svg');
+
+INSERT INTO gallery_images (image_url, caption, category, sort_order)
+SELECT '/images/gallery/cafe-corner.svg', 'Slow café mornings', 'cafe', 3
+WHERE NOT EXISTS (SELECT 1 FROM gallery_images WHERE image_url = '/images/gallery/cafe-corner.svg');
+
+INSERT INTO gallery_images (image_url, caption, category, sort_order)
+SELECT '/images/gallery/forest-trail.svg', 'Pine forest trail', 'nature', 4
+WHERE NOT EXISTS (SELECT 1 FROM gallery_images WHERE image_url = '/images/gallery/forest-trail.svg');
+
+INSERT INTO gallery_images (image_url, caption, category, sort_order)
+SELECT '/images/gallery/evening-bonfire.svg', 'Bonfire evenings', 'evenings', 5
+WHERE NOT EXISTS (SELECT 1 FROM gallery_images WHERE image_url = '/images/gallery/evening-bonfire.svg');
+
+INSERT INTO gallery_images (image_url, caption, category, sort_order)
+SELECT '/images/gallery/mountain-view.svg', 'Mountain view', 'mountains', 6
+WHERE NOT EXISTS (SELECT 1 FROM gallery_images WHERE image_url = '/images/gallery/mountain-view.svg');
 
 INSERT INTO journal_posts (slug, title, excerpt, content, cover_image_url, published_at)
 SELECT 'the-art-of-slow-mornings', 'The Art of Slow Mornings', 'Why we designed every room around the balcony, not the bed.',
