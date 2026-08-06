@@ -7,7 +7,6 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.Instant;
 import java.util.List;
 
 /**
@@ -19,22 +18,23 @@ import java.util.List;
 @RequestMapping("/api/bookings")
 public class BookingController {
 
-    private final BookingRepository repository;
-    public BookingController(BookingRepository repository) { this.repository = repository; }
+    private final BookingService bookingService;
+    public BookingController(BookingService bookingService) {
+        this.bookingService = bookingService;
+    }
 
     @GetMapping("/mine")
     public List<BookingDto> mine(@AuthenticationPrincipal OAuth2User principal) {
-        String email = principal.getAttribute("email");
-        return repository.findByGuestEmail(email).stream()
-                .map(b -> new BookingDto(b.getId(), b.getPropertyId(), b.getCheckIn(), b.getCheckOut(), b.getGuests()))
-                .toList();
+        return bookingService.findMine(principal.getAttribute("email"));
     }
 
     @PostMapping
     public BookingDto create(@Valid @RequestBody BookingRequest request, @AuthenticationPrincipal OAuth2User principal) {
-        String email = principal.getAttribute("email");
-        Booking saved = repository.save(new Booking(request.propertyId(), email,
-                request.checkIn(), request.checkOut(), request.guests(), Instant.now()));
-        return new BookingDto(saved.getId(), saved.getPropertyId(), saved.getCheckIn(), saved.getCheckOut(), saved.getGuests());
+        return bookingService.create(request, principal.getAttribute("email"), principal.getAttribute("name"));
+    }
+
+    @PostMapping("/{id}/cancel")
+    public BookingDto cancel(@PathVariable Long id, @AuthenticationPrincipal OAuth2User principal) {
+        return bookingService.cancelOwn(id, principal.getAttribute("email"));
     }
 }

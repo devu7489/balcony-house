@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
@@ -11,6 +11,58 @@ const links = [
   { to: '/about', label: 'About' },
   { to: '/contact', label: 'Contact' },
 ]
+
+function AccountMenu({ user, logout }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    if (!open) return undefined
+    const onClickOutside = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onClickOutside)
+    return () => document.removeEventListener('mousedown', onClickOutside)
+  }, [open])
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="text-sm px-4 py-2 rounded-full border border-charcoal/20 hover:bg-charcoal hover:text-warmwhite transition-colors"
+      >
+        Hi, {user.name?.split(' ')[0]}
+      </button>
+
+      {open && (
+        <div className="absolute right-0 mt-2 w-48 bg-white border border-stone rounded-xl2 shadow-lg overflow-hidden text-sm">
+          <NavLink
+            to="/my-bookings"
+            onClick={() => setOpen(false)}
+            className="block px-4 py-3 hover:bg-stone/60 text-charcoal/80"
+          >
+            My Bookings
+          </NavLink>
+          {user.isAdmin && (
+            <NavLink
+              to="/admin"
+              onClick={() => setOpen(false)}
+              className="block px-4 py-3 hover:bg-stone/60 text-charcoal/80 border-t border-stone"
+            >
+              Admin — Bookings
+            </NavLink>
+          )}
+          <button
+            onClick={() => { setOpen(false); logout() }}
+            className="block w-full text-left px-4 py-3 hover:bg-stone/60 text-charcoal/80 border-t border-stone"
+          >
+            Log out
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function Navbar() {
   const [open, setOpen] = useState(false)
@@ -39,12 +91,7 @@ export default function Navbar() {
 
         <div className="hidden md:flex items-center gap-4">
           {user ? (
-            <>
-              <span className="text-sm text-charcoal/70">Hi, {user.name?.split(' ')[0]}</span>
-              <button onClick={logout} className="text-sm px-4 py-2 rounded-full border border-charcoal/20 hover:bg-charcoal hover:text-warmwhite transition-colors">
-                Log out
-              </button>
-            </>
+            <AccountMenu user={user} logout={logout} />
           ) : (
             <button onClick={login} className="text-sm px-5 py-2 rounded-full bg-olive text-warmwhite hover:bg-charcoal transition-colors">
               Sign in
@@ -68,7 +115,17 @@ export default function Navbar() {
           ))}
           <div className="pt-2">
             {user ? (
-              <button onClick={logout} className="text-sm">Log out</button>
+              <>
+                <NavLink to="/my-bookings" onClick={() => setOpen(false)} className="block text-charcoal/80 mb-3">
+                  My Bookings
+                </NavLink>
+                {user.isAdmin && (
+                  <NavLink to="/admin" onClick={() => setOpen(false)} className="block text-charcoal/80 mb-3">
+                    Admin — Bookings
+                  </NavLink>
+                )}
+                <button onClick={logout} className="text-sm">Log out</button>
+              </>
             ) : (
               <button onClick={login} className="text-sm px-5 py-2 rounded-full bg-olive text-warmwhite">Sign in</button>
             )}

@@ -8,6 +8,13 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserService;
+import org.springframework.security.oauth2.client.userinfo.OAuth2UserService;
+import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserRequest;
+import org.springframework.security.oauth2.core.oidc.user.DefaultOidcUser;
+import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
@@ -15,7 +22,11 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Core security configuration.
@@ -37,13 +48,38 @@ public class SecurityConfig {
     private final AuditLogService auditLogService;
     private final String frontendUrl;
     private final List<String> allowedOrigins;
+    private final Set<String> adminEmails;
 
     public SecurityConfig(AuditLogService auditLogService,
                            @Value("${app.frontend-url}") String frontendUrl,
-                           @Value("${app.cors.allowed-origins}") String allowedOrigins) {
+                           @Value("${app.cors.allowed-origins}") String allowedOrigins,
+                           @Value("${app.admin-emails}") String adminEmails) {
         this.auditLogService = auditLogService;
         this.frontendUrl = frontendUrl;
         this.allowedOrigins = List.of(allowedOrigins.split(","));
+        this.adminEmails = Arrays.stream(adminEmails.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .collect(Collectors.toSet());
+    }
+
+    /**
+     * Wraps the default OIDC user-loading with a small authority bump: if the
+     * authenticated Google account's email is in app.admin-emails, grant ROLE_ADMIN
+     * on top of the normal scopes. No local user/role table - the allow-list is the
+     * source of truth, appropriate for a single-owner property.
+     */
+    private OAuth2UserService<OidcUserRequest, OidcUser> oidcUserService() {
+        OidcUserService delegate = new OidcUserService();
+        return request -> {
+            OidcUser oidcUser = delegate.loadUser(request);
+            if (adminEmails.contains(oidcUser.getEmail())) {
+                Set<GrantedAuthority> authorities = new HashSet<>(oidcUser.getAuthorities());
+                authorities.add(new SimpleGrantedAuthority("ROLE_ADMIN"));
+                return new DefaultOidcUser(authorities, oidcUser.getIdToken(), oidcUser.getUserInfo());
+            }
+            return oidcUser;
+        };
     }
 
     @Bean
@@ -80,13 +116,15 @@ public class SecurityConfig {
                         "/api/contact/**",
                         "/api/newsletter/**"
                 ).permitAll()
-                // Everything else (bookings, guest profile, admin) requires auth
-                .requestMatchers("/api/bookings/**", "/api/admin/**").authenticated()
+                // Bookings and profile data require a signed-in guest; admin endpoints require ROLE_ADMIN
+                .requestMatchers("/api/bookings/**", "/api/profile/**").authenticated()
+                .requestMatchers("/api/admin/**").hasRole("ADMIN")
                 .anyRequest().authenticated()
             )
             .oauth2Login(oauth2 -> oauth2
                 .authorizationEndpoint(a -> a.baseUri("/oauth2/authorization"))
                 .redirectionEndpoint(r -> r.baseUri("/login/oauth2/code/*"))
+                .userInfoEndpoint(u -> u.oidcUserService(oidcUserService()))
                 .successHandler((request, response, authentication) -> {
                     auditLogService.recordLoginSuccess(authentication.getName());
                     response.sendRedirect(frontendUrl);

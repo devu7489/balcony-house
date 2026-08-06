@@ -11,7 +11,7 @@ body {
 }
 
 h1, h2, h3, .font-heading {
-  @apply font-serif;
+  @apply font-serif font-medium tracking-tight;
 }
 
 @keyframes kenburns {

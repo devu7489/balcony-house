@@ -12,5 +12,6 @@ public record PropertyDto(
         boolean privateBalcony,
         boolean workspaceAvailable,
         String heroImageUrl,
+        int totalUnits,
         List<String> highlights
 ) {}

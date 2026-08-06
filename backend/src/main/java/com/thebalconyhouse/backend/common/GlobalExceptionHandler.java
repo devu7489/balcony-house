@@ -1,5 +1,6 @@
 package com.thebalconyhouse.backend.common;
 
+import com.thebalconyhouse.backend.booking.RoomUnavailableException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,6 +21,16 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ApiError> handleNotFound(ResourceNotFoundException ex, HttpServletRequest req) {
         return build(HttpStatus.NOT_FOUND, ex.getMessage(), List.of(), req);
+    }
+
+    @ExceptionHandler(RoomUnavailableException.class)
+    public ResponseEntity<ApiError> handleRoomUnavailable(RoomUnavailableException ex, HttpServletRequest req) {
+        return build(HttpStatus.CONFLICT, ex.getMessage(), List.of(), req);
+    }
+
+    @ExceptionHandler(ForbiddenException.class)
+    public ResponseEntity<ApiError> handleForbidden(ForbiddenException ex, HttpServletRequest req) {
+        return build(HttpStatus.FORBIDDEN, ex.getMessage(), List.of(), req);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

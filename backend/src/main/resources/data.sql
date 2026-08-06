@@ -5,16 +5,23 @@ UPDATE properties SET hero_image_url = '/images/rooms/sunrise-room.svg' WHERE he
 UPDATE properties SET hero_image_url = '/images/rooms/pinewood-suite.svg' WHERE hero_image_url = '/images/rooms/pinewood-suite.jpg';
 UPDATE properties SET hero_image_url = '/images/rooms/mist-cottage.svg' WHERE hero_image_url = '/images/rooms/mist-cottage.jpg';
 
-INSERT INTO properties (name, description, price_per_night, max_guests, private_balcony, workspace_available, hero_image_url)
-SELECT 'The Sunrise Room', 'A warm, sunlit room with an oversized private balcony facing the eastern ridge. Perfect for slow mornings and mountain coffee.', 8500.00, 2, true, true, '/images/rooms/sunrise-room.svg'
+-- total_units is a new nullable column (Hibernate ddl-auto=update doesn't backfill NOT NULL
+-- on primitive int fields) - existing rows from before this column existed need a value or
+-- Property loading will NPE unboxing a null into the primitive int field.
+UPDATE properties SET total_units = 2 WHERE name = 'The Sunrise Room' AND total_units IS NULL;
+UPDATE properties SET total_units = 2 WHERE name = 'The Pinewood Suite' AND total_units IS NULL;
+UPDATE properties SET total_units = 1 WHERE name = 'The Mist Cottage' AND total_units IS NULL;
+
+INSERT INTO properties (name, description, price_per_night, max_guests, private_balcony, workspace_available, hero_image_url, total_units)
+SELECT 'The Sunrise Room', 'A warm, sunlit room with an oversized private balcony facing the eastern ridge. Perfect for slow mornings and mountain coffee.', 8500.00, 2, true, true, '/images/rooms/sunrise-room.svg', 2
 WHERE NOT EXISTS (SELECT 1 FROM properties WHERE name = 'The Sunrise Room');
 
-INSERT INTO properties (name, description, price_per_night, max_guests, private_balcony, workspace_available, hero_image_url)
-SELECT 'The Pinewood Suite', 'Spacious suite with wood interiors, a reading nook, and views over the pine valley below.', 11500.00, 3, true, true, '/images/rooms/pinewood-suite.svg'
+INSERT INTO properties (name, description, price_per_night, max_guests, private_balcony, workspace_available, hero_image_url, total_units)
+SELECT 'The Pinewood Suite', 'Spacious suite with wood interiors, a reading nook, and views over the pine valley below.', 11500.00, 3, true, true, '/images/rooms/pinewood-suite.svg', 2
 WHERE NOT EXISTS (SELECT 1 FROM properties WHERE name = 'The Pinewood Suite');
 
-INSERT INTO properties (name, description, price_per_night, max_guests, private_balcony, workspace_available, hero_image_url)
-SELECT 'The Mist Cottage', 'A standalone cottage tucked against the tree line, quiet and private, with a fireplace for cool evenings.', 14000.00, 4, true, false, '/images/rooms/mist-cottage.svg'
+INSERT INTO properties (name, description, price_per_night, max_guests, private_balcony, workspace_available, hero_image_url, total_units)
+SELECT 'The Mist Cottage', 'A standalone cottage tucked against the tree line, quiet and private, with a fireplace for cool evenings.', 14000.00, 4, true, false, '/images/rooms/mist-cottage.svg', 1
 WHERE NOT EXISTS (SELECT 1 FROM properties WHERE name = 'The Mist Cottage');
 
 -- Migrate placeholder paths from .jpg (never populated) to the generated .svg placeholders

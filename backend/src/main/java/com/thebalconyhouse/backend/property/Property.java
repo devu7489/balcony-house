@@ -28,6 +28,8 @@ public class Property {
 
     private String heroImageUrl;
 
+    private int totalUnits;
+
     @ElementCollection
     @CollectionTable(name = "property_highlights", joinColumns = @JoinColumn(name = "property_id"))
     @Column(name = "highlight")
@@ -36,7 +38,8 @@ public class Property {
     protected Property() {}
 
     public Property(String name, String description, BigDecimal pricePerNight, int maxGuests,
-                     boolean privateBalcony, boolean workspaceAvailable, String heroImageUrl, List<String> highlights) {
+                     boolean privateBalcony, boolean workspaceAvailable, String heroImageUrl,
+                     int totalUnits, List<String> highlights) {
         this.name = name;
         this.description = description;
         this.pricePerNight = pricePerNight;
@@ -44,6 +47,7 @@ public class Property {
         this.privateBalcony = privateBalcony;
         this.workspaceAvailable = workspaceAvailable;
         this.heroImageUrl = heroImageUrl;
+        this.totalUnits = totalUnits;
         this.highlights = highlights;
     }
 
@@ -55,5 +59,6 @@ public class Property {
     public boolean isPrivateBalcony() { return privateBalcony; }
     public boolean isWorkspaceAvailable() { return workspaceAvailable; }
     public String getHeroImageUrl() { return heroImageUrl; }
+    public int getTotalUnits() { return totalUnits; }
     public List<String> getHighlights() { return highlights; }
 }

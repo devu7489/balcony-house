@@ -50,6 +50,7 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8081}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8081}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
     ports:
       - "8080:8080"
 
