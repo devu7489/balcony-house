@@ -3,8 +3,31 @@ import { Link } from 'react-router-dom'
 import apiClient from '../api/axiosClient'
 import LoadingScreen from '../components/LoadingScreen'
 import StatusBadge from '../components/StatusBadge'
+import { groupBookings } from '../lib/groupBookings'
 
 const emptyForm = { propertyId: '', guestName: '', guestPhone: '', guestEmail: '', checkIn: '', checkOut: '', guests: 1, notes: '' }
+
+function AdminBookingRow({ b, to }) {
+  return (
+    <Link
+      to={to || `/admin/bookings/${b.id}`}
+      className="flex gap-4 items-center bg-white hover:shadow-lg transition-shadow p-4 rounded-xl2"
+    >
+      <div
+        className="w-20 h-20 rounded-lg bg-stone bg-cover bg-center shrink-0"
+        style={{ backgroundImage: b.propertyHeroImageUrl ? `url(${b.propertyHeroImageUrl})` : undefined }}
+      />
+      <div className="flex-1">
+        <h2 className="font-serif text-lg">{b.propertyName || `Room #${b.propertyId}`}</h2>
+        <p className="text-charcoal/70 text-sm">
+          {[b.guestName, b.guestEmail, b.guestPhone].filter(Boolean).join(' · ')}
+        </p>
+        <p className="text-charcoal/60 text-sm">{b.checkIn} &rarr; {b.checkOut} &middot; {b.guests} guest{b.guests === 1 ? '' : 's'}</p>
+      </div>
+      <StatusBadge status={b.status} />
+    </Link>
+  )
+}
 
 export default function Admin() {
   const [bookings, setBookings] = useState([])
@@ -67,7 +90,7 @@ export default function Admin() {
   }
 
   const canSubmit = form.propertyId && form.guestName && form.guestPhone && form.checkIn && form.checkOut
-    && form.checkOut > form.checkIn && availability?.available !== false
+    && form.checkOut > form.checkIn && availability?.available === true
 
   const query = search.trim().toLowerCase()
   const filteredBookings = query
@@ -217,26 +240,27 @@ export default function Admin() {
         <p className="text-charcoal/70">{bookings.length === 0 ? 'No bookings yet.' : 'No bookings match your search.'}</p>
       ) : (
         <div className="space-y-4">
-          {filteredBookings.map((b) => (
-            <Link
-              to={`/admin/bookings/${b.id}`}
-              key={b.id}
-              className="flex gap-4 items-center bg-white border border-stone rounded-xl2 p-4 hover:shadow-lg transition-shadow"
-            >
-              <div
-                className="w-20 h-20 rounded-lg bg-stone bg-cover bg-center shrink-0"
-                style={{ backgroundImage: b.propertyHeroImageUrl ? `url(${b.propertyHeroImageUrl})` : undefined }}
-              />
-              <div className="flex-1">
-                <h2 className="font-serif text-lg">{b.propertyName || `Room #${b.propertyId}`}</h2>
-                <p className="text-charcoal/70 text-sm">
-                  {[b.guestName, b.guestEmail, b.guestPhone].filter(Boolean).join(' · ')}
-                </p>
-                <p className="text-charcoal/60 text-sm">{b.checkIn} &rarr; {b.checkOut} &middot; {b.guests} guest{b.guests === 1 ? '' : 's'}</p>
+          {groupBookings(filteredBookings).map((entry) =>
+            entry.type === 'single' ? (
+              <AdminBookingRow key={entry.booking.id} b={entry.booking} />
+            ) : (
+              <div key={entry.bookingGroupId} className="bg-stone/40 border border-stone rounded-xl2 p-4">
+                <div className="flex items-center justify-between mb-3 px-1">
+                  <p className="text-xs uppercase tracking-wide text-charcoal/50">
+                    Trip &middot; {entry.bookings.length} rooms
+                  </p>
+                  <Link to={`/admin/trips/${entry.bookingGroupId}`} className="text-xs text-olive hover:underline">
+                    View trip &rarr;
+                  </Link>
+                </div>
+                <div className="space-y-3">
+                  {entry.bookings.map((b) => (
+                    <AdminBookingRow key={b.id} b={b} to={`/admin/trips/${entry.bookingGroupId}`} />
+                  ))}
+                </div>
               </div>
-              <StatusBadge status={b.status} />
-            </Link>
-          ))}
+            )
+          )}
         </div>
       )}
     </div>

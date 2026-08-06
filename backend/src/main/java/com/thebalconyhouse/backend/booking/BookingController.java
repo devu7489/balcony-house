@@ -1,6 +1,7 @@
 package com.thebalconyhouse.backend.booking;
 
 import com.thebalconyhouse.backend.booking.dto.BookingDto;
+import com.thebalconyhouse.backend.booking.dto.BookingGroupRequest;
 import com.thebalconyhouse.backend.booking.dto.BookingRequest;
 import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -33,8 +34,18 @@ public class BookingController {
         return bookingService.create(request, principal.getAttribute("email"), principal.getAttribute("name"));
     }
 
+    @PostMapping("/group")
+    public List<BookingDto> createGroup(@Valid @RequestBody BookingGroupRequest request, @AuthenticationPrincipal OAuth2User principal) {
+        return bookingService.createGroup(request, principal.getAttribute("email"), principal.getAttribute("name"));
+    }
+
     @PostMapping("/{id}/cancel")
     public BookingDto cancel(@PathVariable Long id, @AuthenticationPrincipal OAuth2User principal) {
         return bookingService.cancelOwn(id, principal.getAttribute("email"));
+    }
+
+    @PostMapping("/group/{groupId}/cancel")
+    public List<BookingDto> cancelGroup(@PathVariable Long groupId, @AuthenticationPrincipal OAuth2User principal) {
+        return bookingService.cancelOwnGroup(groupId, principal.getAttribute("email"));
     }
 }

@@ -49,4 +49,24 @@ public class AdminBookingController {
     public BookingDto cancel(@PathVariable Long id) {
         return bookingService.cancel(id);
     }
+
+    @GetMapping("/group/{groupId}")
+    public List<BookingDto> group(@PathVariable Long groupId) {
+        return bookingService.findByGroupId(groupId);
+    }
+
+    @PostMapping("/group/{groupId}/check-in")
+    public List<BookingDto> checkInGroup(@PathVariable Long groupId) {
+        return bookingService.checkInGroup(groupId);
+    }
+
+    @PostMapping("/group/{groupId}/check-out")
+    public List<BookingDto> checkOutGroup(@PathVariable Long groupId) {
+        return bookingService.checkOutGroup(groupId);
+    }
+
+    @PostMapping("/group/{groupId}/cancel")
+    public List<BookingDto> cancelGroup(@PathVariable Long groupId) {
+        return bookingService.cancelGroup(groupId);
+    }
 }

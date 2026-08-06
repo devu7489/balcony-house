@@ -10,6 +10,7 @@ import java.util.List;
 public interface BookingRepository extends JpaRepository<Booking, Long> {
     List<Booking> findByGuestEmail(String guestEmail);
     List<Booking> findAllByOrderByCheckInDesc();
+    List<Booking> findByBookingGroupId(Long bookingGroupId);
 
     @Query("SELECT COUNT(b) FROM Booking b WHERE b.propertyId = :propertyId AND b.status = 'CONFIRMED' " +
            "AND b.checkIn < :checkOut AND b.checkOut > :checkIn")

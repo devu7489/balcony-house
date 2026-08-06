@@ -86,35 +86,44 @@ export default function AdminBookingDetail() {
             </div>
           )}
 
-          <div className="flex flex-wrap gap-3">
-            {booking.status === 'CONFIRMED' && (
-              <button
-                onClick={() => runAction('check-in')}
-                disabled={actionStatus === 'running'}
-                className="px-6 py-2.5 rounded-full bg-olive text-warmwhite hover:bg-charcoal transition-colors disabled:opacity-50"
-              >
-                Check-in
-              </button>
-            )}
-            {booking.status === 'CHECKED_IN' && (
-              <button
-                onClick={() => runAction('check-out')}
-                disabled={actionStatus === 'running'}
-                className="px-6 py-2.5 rounded-full bg-olive text-warmwhite hover:bg-charcoal transition-colors disabled:opacity-50"
-              >
-                Check-out
-              </button>
-            )}
-            {(booking.status === 'CONFIRMED' || booking.status === 'CHECKED_IN') && (
-              <button
-                onClick={() => runAction('cancel')}
-                disabled={actionStatus === 'running'}
-                className="px-6 py-2.5 rounded-full border border-red-600 text-red-600 hover:bg-red-600 hover:text-white transition-colors disabled:opacity-50"
-              >
-                Cancel booking
-              </button>
-            )}
-          </div>
+          {!booking.bookingGroupId && (
+            <div className="flex flex-wrap gap-3">
+              {booking.status === 'CONFIRMED' && (
+                <button
+                  onClick={() => runAction('check-in')}
+                  disabled={actionStatus === 'running'}
+                  className="px-6 py-2.5 rounded-full bg-olive text-warmwhite hover:bg-charcoal transition-colors disabled:opacity-50"
+                >
+                  Check-in
+                </button>
+              )}
+              {booking.status === 'CHECKED_IN' && (
+                <button
+                  onClick={() => runAction('check-out')}
+                  disabled={actionStatus === 'running'}
+                  className="px-6 py-2.5 rounded-full bg-olive text-warmwhite hover:bg-charcoal transition-colors disabled:opacity-50"
+                >
+                  Check-out
+                </button>
+              )}
+              {(booking.status === 'CONFIRMED' || booking.status === 'CHECKED_IN') && (
+                <button
+                  onClick={() => runAction('cancel')}
+                  disabled={actionStatus === 'running'}
+                  className="px-6 py-2.5 rounded-full border border-red-600 text-red-600 hover:bg-red-600 hover:text-white transition-colors disabled:opacity-50"
+                >
+                  Cancel booking
+                </button>
+              )}
+            </div>
+          )}
+
+          {booking.bookingGroupId && (
+            <p className="text-xs text-charcoal/50">
+              This room is part of a multi-room trip — manage check-in, check-out, and cancellation from the{' '}
+              <Link to={`/admin/trips/${booking.bookingGroupId}`} className="underline">trip page</Link>.
+            </p>
+          )}
 
           {actionError && <p className="text-red-600 text-sm mt-4">{actionError}</p>}
         </div>

@@ -1,0 +1,173 @@
+import { useEffect, useState } from 'react'
+import { Link, useLocation } from 'react-router-dom'
+import apiClient from '../api/axiosClient'
+import { useAuth } from '../context/AuthContext'
+import { getCart, setNotes as saveNotes, removeRoom, clearCart } from '../lib/cart'
+
+export default function Checkout() {
+  const { user, login } = useAuth()
+  const location = useLocation()
+
+  const [cart, setCartState] = useState(getCart())
+  const [notes, setNotesState] = useState(cart.notes)
+  const [availability, setAvailability] = useState({})
+  const [checkingAvailability, setCheckingAvailability] = useState(true)
+  const [submitStatus, setSubmitStatus] = useState('idle')
+  const [submitError, setSubmitError] = useState('')
+  const [confirmed, setConfirmed] = useState(null)
+
+  useEffect(() => {
+    if (cart.rooms.length === 0 || !cart.checkIn || !cart.checkOut) {
+      setCheckingAvailability(false)
+      return
+    }
+    setCheckingAvailability(true)
+    Promise.all(cart.rooms.map((r) =>
+      apiClient.get(`/properties/${r.propertyId}/availability`, { params: { checkIn: cart.checkIn, checkOut: cart.checkOut } })
+        .then(({ data }) => [r.propertyId, data])
+        .catch(() => [r.propertyId, null])
+    )).then((results) => setAvailability(Object.fromEntries(results)))
+      .finally(() => setCheckingAvailability(false))
+  }, [cart.rooms, cart.checkIn, cart.checkOut])
+
+  const handleRemove = (propertyId) => {
+    const updated = removeRoom(propertyId)
+    setCartState(updated)
+  }
+
+  const hasUnavailableRoom = cart.rooms.some((r) => availability[r.propertyId]?.available === false)
+
+  const submit = async (e) => {
+    e.preventDefault()
+    saveNotes(notes)
+    if (!user) {
+      login()
+      return
+    }
+    setSubmitStatus('submitting')
+    setSubmitError('')
+    try {
+      const { data } = await apiClient.post('/bookings/group', {
+        guestPhone: user.phone,
+        checkIn: cart.checkIn,
+        checkOut: cart.checkOut,
+        notes: notes || null,
+        rooms: cart.rooms.map((r) => ({ propertyId: r.propertyId, guests: r.guests })),
+      })
+      clearCart()
+      setConfirmed(data)
+      setSubmitStatus('success')
+    } catch (err) {
+      setSubmitStatus('error')
+      setSubmitError(err.response?.data?.message || 'Something went wrong, please try again.')
+    }
+  }
+
+  if (submitStatus === 'success' && confirmed) {
+    return (
+      <div className="max-w-2xl mx-auto px-6 lg:px-10 py-20">
+        <h1 className="font-serif text-3xl mb-4">Trip confirmed — see you soon.</h1>
+        <div className="space-y-3 mb-8">
+          {confirmed.map((b) => (
+            <div key={b.id} className="flex gap-4 items-center bg-white border border-stone rounded-xl2 p-4">
+              <div
+                className="w-16 h-16 rounded-lg bg-stone bg-cover bg-center shrink-0"
+                style={{ backgroundImage: b.propertyHeroImageUrl ? `url(${b.propertyHeroImageUrl})` : undefined }}
+              />
+              <div>
+                <h2 className="font-serif text-lg">{b.propertyName}</h2>
+                <p className="text-charcoal/60 text-sm">{b.checkIn} &rarr; {b.checkOut} &middot; {b.guests} guest{b.guests === 1 ? '' : 's'}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+        <Link to="/my-bookings" className="inline-block px-7 py-3 rounded-full bg-olive text-warmwhite hover:bg-charcoal transition-colors">
+          View my bookings
+        </Link>
+      </div>
+    )
+  }
+
+  if (cart.rooms.length === 0) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-6">
+        <h1 className="font-serif text-3xl mb-4">Your trip is empty.</h1>
+        <Link to="/stay" className="text-olive hover:underline">Browse rooms</Link>
+      </div>
+    )
+  }
+
+  return (
+    <div className="max-w-2xl mx-auto px-6 lg:px-10 py-20">
+      <Link to="/stay" className="text-sm text-olive hover:underline">&larr; Back to Stay</Link>
+
+      <h1 className="font-serif text-3xl mt-6 mb-2">Review your trip</h1>
+      <p className="text-charcoal/70 mb-8">{cart.checkIn} &rarr; {cart.checkOut}</p>
+
+      <div className="space-y-4 mb-6">
+        {cart.rooms.map((r) => {
+          const avail = availability[r.propertyId]
+          const unavailable = avail?.available === false
+          return (
+            <div key={r.propertyId} className={`bg-white border rounded-xl2 p-4 ${unavailable ? 'border-red-300' : 'border-stone'}`}>
+              <div className="flex gap-4 items-center">
+                <div
+                  className="w-20 h-20 rounded-lg bg-stone bg-cover bg-center shrink-0"
+                  style={{ backgroundImage: r.propertyHeroImageUrl ? `url(${r.propertyHeroImageUrl})` : undefined }}
+                />
+                <div className="flex-1">
+                  <h2 className="font-serif text-lg">{r.propertyName}</h2>
+                  <p className="text-charcoal/60 text-sm">{r.guests} guest{r.guests === 1 ? '' : 's'}</p>
+                </div>
+                <button onClick={() => handleRemove(r.propertyId)} className="text-xs text-red-600 hover:underline">
+                  Remove
+                </button>
+              </div>
+              {unavailable && (
+                <p className="text-xs text-red-600 mt-3">
+                  This room became fully booked for these dates — remove it or pick different dates.
+                </p>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      <form onSubmit={submit} className="bg-white border border-stone rounded-xl2 p-6 space-y-4">
+        <label className="block text-sm text-charcoal/70">
+          Anything we should know? <span className="text-charcoal/40">(optional)</span>
+          <textarea
+            rows={3}
+            placeholder="Special requests, arrival time, etc."
+            value={notes}
+            onChange={(e) => setNotesState(e.target.value)}
+            className="mt-1 w-full border border-stone rounded-lg px-3 py-2.5 focus:outline-none focus:border-olive"
+          />
+        </label>
+
+        {user && !user.phone && (
+          <p className="text-sm text-red-600">
+            We don't have a phone number on file yet —{' '}
+            <Link to="/complete-profile" state={{ from: location }} className="underline">
+              add one to your profile
+            </Link>{' '}
+            before booking.
+          </p>
+        )}
+
+        {checkingAvailability && <p className="text-sm text-charcoal/50">Confirming availability…</p>}
+
+        <button
+          type="submit"
+          disabled={submitStatus === 'submitting' || checkingAvailability || hasUnavailableRoom || (user && !user.phone)}
+          className="w-full px-7 py-3 rounded-full bg-olive text-warmwhite hover:bg-charcoal transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {submitStatus === 'submitting' ? 'Booking…' : user ? `Book all ${cart.rooms.length} room${cart.rooms.length === 1 ? '' : 's'}` : 'Sign in to book'}
+        </button>
+
+        {submitStatus === 'error' && <p className="text-red-600 text-sm">{submitError}</p>}
+        {!user && <p className="text-xs text-charcoal/50">You'll be asked to sign in with Google before your trip is confirmed.</p>}
+      </form>
+    </div>
+  )
+}

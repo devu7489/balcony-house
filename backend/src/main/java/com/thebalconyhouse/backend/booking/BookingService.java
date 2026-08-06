@@ -2,7 +2,9 @@ package com.thebalconyhouse.backend.booking;
 
 import com.thebalconyhouse.backend.booking.dto.AdminBookingRequest;
 import com.thebalconyhouse.backend.booking.dto.BookingDto;
+import com.thebalconyhouse.backend.booking.dto.BookingGroupRequest;
 import com.thebalconyhouse.backend.booking.dto.BookingRequest;
+import com.thebalconyhouse.backend.booking.dto.GroupRoomSelection;
 import com.thebalconyhouse.backend.common.ForbiddenException;
 import com.thebalconyhouse.backend.common.ResourceNotFoundException;
 import com.thebalconyhouse.backend.property.Property;
@@ -13,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -22,10 +25,13 @@ import java.util.function.Function;
 public class BookingService {
 
     private final BookingRepository bookingRepository;
+    private final BookingGroupRepository bookingGroupRepository;
     private final PropertyRepository propertyRepository;
 
-    public BookingService(BookingRepository bookingRepository, PropertyRepository propertyRepository) {
+    public BookingService(BookingRepository bookingRepository, BookingGroupRepository bookingGroupRepository,
+                           PropertyRepository propertyRepository) {
         this.bookingRepository = bookingRepository;
+        this.bookingGroupRepository = bookingGroupRepository;
         this.propertyRepository = propertyRepository;
     }
 
@@ -38,32 +44,61 @@ public class BookingService {
     @Transactional
     public BookingDto create(BookingRequest request, String guestEmail, String guestName) {
         return createInternal(request.propertyId(), guestEmail, guestName, request.guestPhone(),
-                request.checkIn(), request.checkOut(), request.guests(), request.notes());
+                request.checkIn(), request.checkOut(), request.guests(), request.notes(), null);
     }
 
     @Transactional
     public BookingDto createForAdmin(AdminBookingRequest request) {
         return createInternal(request.propertyId(), request.guestEmail(), request.guestName(), request.guestPhone(),
-                request.checkIn(), request.checkOut(), request.guests(), request.notes());
+                request.checkIn(), request.checkOut(), request.guests(), request.notes(), null);
+    }
+
+    /**
+     * Books every room in the request atomically: if any room fails validation (capacity,
+     * guest count, availability - accounting for other rooms of the same type earlier in
+     * this same request, not just what's already in the database), nothing is persisted.
+     */
+    @Transactional
+    public List<BookingDto> createGroup(BookingGroupRequest request, String guestEmail, String guestName) {
+        Map<Long, Integer> consumedInRequest = new HashMap<>();
+        for (GroupRoomSelection selection : request.rooms()) {
+            Property property = findProperty(selection.propertyId());
+            validateRoom(property, request.checkIn(), request.checkOut(), selection.guests(),
+                    consumedInRequest.getOrDefault(property.getId(), 0));
+            consumedInRequest.merge(property.getId(), 1, Integer::sum);
+        }
+
+        BookingGroup group = bookingGroupRepository.save(new BookingGroup(guestEmail, guestName, request.guestPhone(),
+                request.checkIn(), request.checkOut(), request.notes(), Instant.now()));
+
+        return request.rooms().stream()
+                .map(selection -> createInternal(selection.propertyId(), guestEmail, guestName, request.guestPhone(),
+                        request.checkIn(), request.checkOut(), selection.guests(), request.notes(), group.getId()))
+                .toList();
     }
 
     private BookingDto createInternal(Long propertyId, String guestEmail, String guestName, String guestPhone,
-                                       LocalDate checkIn, LocalDate checkOut, int guests, String notes) {
+                                       LocalDate checkIn, LocalDate checkOut, int guests, String notes, Long bookingGroupId) {
         Property property = findProperty(propertyId);
+        validateRoom(property, checkIn, checkOut, guests, 0);
 
+        Booking booking = new Booking(property.getId(), guestEmail, guestName, guestPhone,
+                checkIn, checkOut, guests, notes, Instant.now());
+        booking.setBookingGroupId(bookingGroupId);
+        Booking saved = bookingRepository.save(booking);
+        return toDto(saved, property);
+    }
+
+    private void validateRoom(Property property, LocalDate checkIn, LocalDate checkOut, int guests, int alreadyConsumed) {
         if (!checkOut.isAfter(checkIn)) {
             throw new IllegalArgumentException("Check-out must be after check-in");
         }
         if (guests > property.getMaxGuests()) {
             throw new IllegalArgumentException("This room sleeps at most " + property.getMaxGuests() + " guests");
         }
-        if (unitsLeft(property, checkIn, checkOut) <= 0) {
+        if (unitsLeft(property, checkIn, checkOut) - alreadyConsumed <= 0) {
             throw new RoomUnavailableException("No rooms of this type are available for the selected dates");
         }
-
-        Booking saved = bookingRepository.save(new Booking(property.getId(), guestEmail, guestName, guestPhone,
-                checkIn, checkOut, guests, notes, Instant.now()));
-        return toDto(saved, property);
     }
 
     public BookingDto findById(Long bookingId) {
@@ -111,6 +146,70 @@ public class BookingService {
         return cancelInternal(booking);
     }
 
+    public List<BookingDto> findByGroupId(Long groupId) {
+        findGroup(groupId);
+        return enrich(bookingRepository.findByBookingGroupId(groupId));
+    }
+
+    /**
+     * Trip-level check-in/check-out/cancel: admin manages a trip as one unit rather than
+     * room-by-room. Each only acts on rooms currently in the applicable state and leaves
+     * the rest untouched, so a partially-progressed trip (e.g. one room already checked
+     * out) doesn't block the action on the others.
+     */
+    @Transactional
+    public List<BookingDto> checkInGroup(Long groupId) {
+        findGroup(groupId);
+        return bookingRepository.findByBookingGroupId(groupId).stream()
+                .map(b -> b.getStatus() == BookingStatus.CONFIRMED
+                        ? transitionTo(b, BookingStatus.CHECKED_IN)
+                        : toDto(b, propertyRepository.findById(b.getPropertyId()).orElse(null)))
+                .toList();
+    }
+
+    @Transactional
+    public List<BookingDto> checkOutGroup(Long groupId) {
+        findGroup(groupId);
+        return bookingRepository.findByBookingGroupId(groupId).stream()
+                .map(b -> b.getStatus() == BookingStatus.CHECKED_IN
+                        ? transitionTo(b, BookingStatus.CHECKED_OUT)
+                        : toDto(b, propertyRepository.findById(b.getPropertyId()).orElse(null)))
+                .toList();
+    }
+
+    /**
+     * Cancels every room in the trip that isn't already checked out (a completed stay is
+     * left alone rather than failing the whole action) - this is the primary way bookings
+     * get cancelled now, whether the trip has one room or several.
+     */
+    @Transactional
+    public List<BookingDto> cancelGroup(Long groupId) {
+        findGroup(groupId);
+        return cancelGroupInternal(groupId);
+    }
+
+    @Transactional
+    public List<BookingDto> cancelOwnGroup(Long groupId, String guestEmail) {
+        BookingGroup group = findGroup(groupId);
+        if (!guestEmail.equals(group.getGuestEmail())) {
+            throw new ForbiddenException("You can only cancel your own trips");
+        }
+        return cancelGroupInternal(groupId);
+    }
+
+    private List<BookingDto> cancelGroupInternal(Long groupId) {
+        return bookingRepository.findByBookingGroupId(groupId).stream()
+                .map(b -> b.getStatus() == BookingStatus.CHECKED_OUT
+                        ? toDto(b, propertyRepository.findById(b.getPropertyId()).orElse(null))
+                        : transitionTo(b, BookingStatus.CANCELLED))
+                .toList();
+    }
+
+    private BookingGroup findGroup(Long groupId) {
+        return bookingGroupRepository.findById(groupId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking group " + groupId + " not found"));
+    }
+
     private Booking findBooking(Long bookingId) {
         return bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new ResourceNotFoundException("Booking " + bookingId + " not found"));
@@ -153,6 +252,7 @@ public class BookingService {
                 property != null ? property.getName() : null,
                 property != null ? property.getHeroImageUrl() : null,
                 b.getGuestEmail(), b.getGuestName(), b.getGuestPhone(),
-                b.getCheckIn(), b.getCheckOut(), b.getGuests(), b.getNotes(), b.getStatus());
+                b.getCheckIn(), b.getCheckOut(), b.getGuests(), b.getNotes(), b.getStatus(),
+                b.getBookingGroupId());
     }
 }

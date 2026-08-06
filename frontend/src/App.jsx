@@ -16,8 +16,10 @@ import Journal from './pages/Journal'
 import About from './pages/About'
 import Contact from './pages/Contact'
 import MyBookings from './pages/MyBookings'
+import Checkout from './pages/Checkout'
 import Admin from './pages/Admin'
 import AdminBookingDetail from './pages/AdminBookingDetail'
+import AdminTripDetail from './pages/AdminTripDetail'
 import CompleteProfile from './pages/CompleteProfile'
 import NotFound from './pages/NotFound'
 
@@ -32,6 +34,7 @@ export default function App() {
             <Route path="/" element={<Home />} />
             <Route path="/stay" element={<Stay />} />
             <Route path="/stay/:id" element={<RoomDetail />} />
+            <Route path="/checkout" element={<Checkout />} />
             <Route path="/experiences" element={<Experiences />} />
             <Route path="/cafe" element={<Cafe />} />
             <Route path="/gallery" element={<Gallery />} />
@@ -67,6 +70,14 @@ export default function App() {
               element={
                 <AdminRoute>
                   <AdminBookingDetail />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/admin/trips/:groupId"
+              element={
+                <AdminRoute>
+                  <AdminTripDetail />
                 </AdminRoute>
               }
             />

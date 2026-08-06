@@ -16,5 +16,6 @@ public record BookingDto(
         LocalDate checkOut,
         int guests,
         String notes,
-        BookingStatus status
+        BookingStatus status,
+        Long bookingGroupId
 ) {}
