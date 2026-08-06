@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-warmwhite text-charcoal font-sans antialiased;
+}
+
+h1, h2, h3, .font-heading {
+  @apply font-serif;
+}

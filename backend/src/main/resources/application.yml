@@ -1,0 +1,70 @@
+server:
+  port: 8080
+  servlet:
+    session:
+      timeout: ${SESSION_TIMEOUT:30m}
+      cookie:
+        name: BALCONYSESSION
+        http-only: true
+        secure: ${COOKIE_SECURE:false}     # set true behind HTTPS in production
+        same-site: lax
+
+spring:
+  application:
+    name: balcony-house-backend
+
+  session:
+    store-type: redis
+    redis:
+      namespace: balconyhouse:session
+      flush-mode: on_save
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:balconyhouse}
+    username: ${DB_USER:balconyhouse}
+    password: ${DB_PASSWORD:balconyhouse}
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    defer-datasource-initialization: true
+    properties:
+      hibernate:
+        format_sql: true
+    show-sql: false
+
+  sql:
+    init:
+      mode: always
+
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID:}
+            client-secret: ${GOOGLE_CLIENT_SECRET:}
+            scope:
+              - openid
+              - profile
+              - email
+        provider:
+          google:
+            authorization-uri: https://accounts.google.com/o/oauth2/v2/auth
+            token-uri: https://oauth2.googleapis.com/token
+
+app:
+  frontend-url: ${FRONTEND_URL:http://localhost:5173}
+  cors:
+    allowed-origins: ${CORS_ORIGINS:http://localhost:5173}
+
+logging:
+  level:
+    com.thebalconyhouse.backend: INFO
+    org.springframework.security: INFO

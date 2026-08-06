@@ -1,0 +1,80 @@
+import { useState } from 'react'
+import { NavLink } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
+
+const links = [
+  { to: '/stay', label: 'Stay' },
+  { to: '/experiences', label: 'Experiences' },
+  { to: '/cafe', label: 'Café' },
+  { to: '/gallery', label: 'Gallery' },
+  { to: '/journal', label: 'Journal' },
+  { to: '/about', label: 'About' },
+  { to: '/contact', label: 'Contact' },
+]
+
+export default function Navbar() {
+  const [open, setOpen] = useState(false)
+  const { user, login, logout } = useAuth()
+
+  return (
+    <header className="sticky top-0 z-40 bg-warmwhite/80 backdrop-blur-md border-b border-stone">
+      <div className="max-w-7xl mx-auto px-6 lg:px-10 h-20 flex items-center justify-between">
+        <NavLink to="/" className="font-serif text-xl tracking-tight">
+          The Balcony House
+        </NavLink>
+
+        <nav className="hidden md:flex items-center gap-8 text-sm">
+          {links.map((l) => (
+            <NavLink
+              key={l.to}
+              to={l.to}
+              className={({ isActive }) =>
+                `transition-colors hover:text-olive ${isActive ? 'text-olive' : 'text-charcoal/80'}`
+              }
+            >
+              {l.label}
+            </NavLink>
+          ))}
+        </nav>
+
+        <div className="hidden md:flex items-center gap-4">
+          {user ? (
+            <>
+              <span className="text-sm text-charcoal/70">Hi, {user.name?.split(' ')[0]}</span>
+              <button onClick={logout} className="text-sm px-4 py-2 rounded-full border border-charcoal/20 hover:bg-charcoal hover:text-warmwhite transition-colors">
+                Log out
+              </button>
+            </>
+          ) : (
+            <button onClick={login} className="text-sm px-5 py-2 rounded-full bg-olive text-warmwhite hover:bg-charcoal transition-colors">
+              Sign in
+            </button>
+          )}
+        </div>
+
+        <button className="md:hidden" onClick={() => setOpen((o) => !o)} aria-label="Toggle menu">
+          <span className="block w-6 h-0.5 bg-charcoal mb-1.5" />
+          <span className="block w-6 h-0.5 bg-charcoal mb-1.5" />
+          <span className="block w-6 h-0.5 bg-charcoal" />
+        </button>
+      </div>
+
+      {open && (
+        <nav className="md:hidden px-6 pb-6 flex flex-col gap-4 bg-warmwhite">
+          {links.map((l) => (
+            <NavLink key={l.to} to={l.to} onClick={() => setOpen(false)} className="text-charcoal/80">
+              {l.label}
+            </NavLink>
+          ))}
+          <div className="pt-2">
+            {user ? (
+              <button onClick={logout} className="text-sm">Log out</button>
+            ) : (
+              <button onClick={login} className="text-sm px-5 py-2 rounded-full bg-olive text-warmwhite">Sign in</button>
+            )}
+          </div>
+        </nav>
+      )}
+    </header>
+  )
+}
