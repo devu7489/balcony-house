@@ -3,10 +3,12 @@ package com.thebalconyhouse.backend.property;
 import com.thebalconyhouse.backend.common.ResourceNotFoundException;
 import com.thebalconyhouse.backend.property.dto.PropertyDto;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
 @Service
+@Transactional(readOnly = true)
 public class PropertyService {
 
     private final PropertyRepository repository;
@@ -27,6 +29,7 @@ public class PropertyService {
 
     private PropertyDto toDto(Property p) {
         return new PropertyDto(p.getId(), p.getName(), p.getDescription(), p.getPricePerNight(),
-                p.getMaxGuests(), p.isPrivateBalcony(), p.isWorkspaceAvailable(), p.getHeroImageUrl(), p.getHighlights());
+                p.getMaxGuests(), p.isPrivateBalcony(), p.isWorkspaceAvailable(), p.getHeroImageUrl(),
+                List.copyOf(p.getHighlights()));
     }
 }
