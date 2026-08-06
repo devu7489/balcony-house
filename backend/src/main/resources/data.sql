@@ -1,35 +1,47 @@
 -- Seed data for local/demo use. Safe to remove for production.
 
+-- Migrate placeholder paths from .jpg (never populated) to the generated .svg placeholders
+UPDATE properties SET hero_image_url = '/images/rooms/sunrise-room.svg' WHERE hero_image_url = '/images/rooms/sunrise-room.jpg';
+UPDATE properties SET hero_image_url = '/images/rooms/pinewood-suite.svg' WHERE hero_image_url = '/images/rooms/pinewood-suite.jpg';
+UPDATE properties SET hero_image_url = '/images/rooms/mist-cottage.svg' WHERE hero_image_url = '/images/rooms/mist-cottage.jpg';
+
 INSERT INTO properties (name, description, price_per_night, max_guests, private_balcony, workspace_available, hero_image_url)
-SELECT 'The Sunrise Room', 'A warm, sunlit room with an oversized private balcony facing the eastern ridge. Perfect for slow mornings and mountain coffee.', 8500.00, 2, true, true, '/images/rooms/sunrise-room.jpg'
+SELECT 'The Sunrise Room', 'A warm, sunlit room with an oversized private balcony facing the eastern ridge. Perfect for slow mornings and mountain coffee.', 8500.00, 2, true, true, '/images/rooms/sunrise-room.svg'
 WHERE NOT EXISTS (SELECT 1 FROM properties WHERE name = 'The Sunrise Room');
 
 INSERT INTO properties (name, description, price_per_night, max_guests, private_balcony, workspace_available, hero_image_url)
-SELECT 'The Pinewood Suite', 'Spacious suite with wood interiors, a reading nook, and views over the pine valley below.', 11500.00, 3, true, true, '/images/rooms/pinewood-suite.jpg'
+SELECT 'The Pinewood Suite', 'Spacious suite with wood interiors, a reading nook, and views over the pine valley below.', 11500.00, 3, true, true, '/images/rooms/pinewood-suite.svg'
 WHERE NOT EXISTS (SELECT 1 FROM properties WHERE name = 'The Pinewood Suite');
 
 INSERT INTO properties (name, description, price_per_night, max_guests, private_balcony, workspace_available, hero_image_url)
-SELECT 'The Mist Cottage', 'A standalone cottage tucked against the tree line, quiet and private, with a fireplace for cool evenings.', 14000.00, 4, true, false, '/images/rooms/mist-cottage.jpg'
+SELECT 'The Mist Cottage', 'A standalone cottage tucked against the tree line, quiet and private, with a fireplace for cool evenings.', 14000.00, 4, true, false, '/images/rooms/mist-cottage.svg'
 WHERE NOT EXISTS (SELECT 1 FROM properties WHERE name = 'The Mist Cottage');
 
+-- Migrate placeholder paths from .jpg (never populated) to the generated .svg placeholders
+UPDATE experiences SET image_url = '/images/experiences/sunrise-coffee.svg' WHERE image_url = '/images/experiences/sunrise-coffee.jpg';
+UPDATE experiences SET image_url = '/images/experiences/bonfire.svg' WHERE image_url = '/images/experiences/bonfire.jpg';
+UPDATE experiences SET image_url = '/images/experiences/nature-walk.svg' WHERE image_url = '/images/experiences/nature-walk.jpg';
+UPDATE cafe_items SET image_url = '/images/cafe/pour-over.svg' WHERE image_url = '/images/cafe/pour-over.jpg';
+UPDATE cafe_items SET image_url = '/images/cafe/breakfast-bowl.svg' WHERE image_url = '/images/cafe/breakfast-bowl.jpg';
+
 INSERT INTO experiences (title, description, image_url)
-SELECT 'Sunrise Coffee', 'Start the day with a warm cup on your balcony as the mist lifts off the valley.', '/images/experiences/sunrise-coffee.jpg'
+SELECT 'Sunrise Coffee', 'Start the day with a warm cup on your balcony as the mist lifts off the valley.', '/images/experiences/sunrise-coffee.svg'
 WHERE NOT EXISTS (SELECT 1 FROM experiences WHERE title = 'Sunrise Coffee');
 
 INSERT INTO experiences (title, description, image_url)
-SELECT 'Bonfire Evenings', 'Gather around the fire with fellow guests, stories, and a sky full of stars.', '/images/experiences/bonfire.jpg'
+SELECT 'Bonfire Evenings', 'Gather around the fire with fellow guests, stories, and a sky full of stars.', '/images/experiences/bonfire.svg'
 WHERE NOT EXISTS (SELECT 1 FROM experiences WHERE title = 'Bonfire Evenings');
 
 INSERT INTO experiences (title, description, image_url)
-SELECT 'Nature Walks', 'Guided or self-paced trails through pine forest and along mountain streams.', '/images/experiences/nature-walk.jpg'
+SELECT 'Nature Walks', 'Guided or self-paced trails through pine forest and along mountain streams.', '/images/experiences/nature-walk.svg'
 WHERE NOT EXISTS (SELECT 1 FROM experiences WHERE title = 'Nature Walks');
 
 INSERT INTO cafe_items (name, description, image_url, category)
-SELECT 'Mountain Pour-Over', 'Locally roasted single-origin beans, brewed slow.', '/images/cafe/pour-over.jpg', 'coffee'
+SELECT 'Mountain Pour-Over', 'Locally roasted single-origin beans, brewed slow.', '/images/cafe/pour-over.svg', 'coffee'
 WHERE NOT EXISTS (SELECT 1 FROM cafe_items WHERE name = 'Mountain Pour-Over');
 
 INSERT INTO cafe_items (name, description, image_url, category)
-SELECT 'Garden Breakfast Bowl', 'Seasonal, local, and made to be eaten slowly with a view.', '/images/cafe/breakfast-bowl.jpg', 'breakfast'
+SELECT 'Garden Breakfast Bowl', 'Seasonal, local, and made to be eaten slowly with a view.', '/images/cafe/breakfast-bowl.svg', 'breakfast'
 WHERE NOT EXISTS (SELECT 1 FROM cafe_items WHERE name = 'Garden Breakfast Bowl');
 
 -- Migrate placeholder paths from .jpg (never populated) to the generated .svg placeholders

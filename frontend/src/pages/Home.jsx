@@ -3,24 +3,28 @@ import { Link } from 'react-router-dom'
 export default function Home() {
   return (
     <div>
-      <section
-        className="relative h-[92vh] flex items-end bg-cover bg-center"
-        style={{ backgroundImage: "linear-gradient(180deg, rgba(43,43,41,0.15), rgba(43,43,41,0.55)), url(/images/hero/balcony-sunrise.jpg)" }}
-      >
-        <div className="max-w-7xl mx-auto px-6 lg:px-10 pb-20 w-full text-warmwhite">
-          <h1 className="font-serif text-5xl md:text-7xl leading-tight mb-6 max-w-2xl">
-            Stay a little longer.
-          </h1>
-          <p className="max-w-xl text-warmwhite/85 mb-8 text-lg">
-            Thoughtfully designed mountain stays where every balcony becomes your favorite place to pause, reconnect, and create memories.
-          </p>
-          <div className="flex flex-wrap gap-4">
-            <Link to="/stay" className="px-7 py-3 rounded-full bg-warmwhite text-charcoal hover:bg-stone transition-colors">
-              Book Your Stay
-            </Link>
-            <Link to="/experiences" className="px-7 py-3 rounded-full border border-warmwhite/70 hover:bg-warmwhite/10 transition-colors">
-              Explore the Experience
-            </Link>
+      <section className="px-4 md:px-8 pt-4 md:pt-6">
+        <div className="relative w-full aspect-[3/2] max-h-[85vh] min-h-[420px] rounded-xl2 overflow-hidden flex items-end">
+          <div
+            className="absolute inset-0 bg-cover bg-center"
+            style={{ backgroundImage: "url(/images/hero/balcony-sunrise.png)" }}
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-charcoal/10 to-charcoal/55" />
+          <div className="relative max-w-7xl mx-auto px-6 lg:px-10 pb-12 md:pb-16 w-full text-warmwhite">
+            <h1 className="font-serif text-5xl md:text-7xl leading-tight mb-6 max-w-2xl">
+              Stay a little longer.
+            </h1>
+            <p className="max-w-xl text-warmwhite/85 mb-8 text-lg">
+              Thoughtfully designed mountain stays where every balcony becomes your favorite place to pause, reconnect, and create memories.
+            </p>
+            <div className="flex flex-wrap gap-4">
+              <Link to="/stay" className="px-7 py-3 rounded-full bg-warmwhite text-charcoal hover:bg-stone transition-colors">
+                Book Your Stay
+              </Link>
+              <Link to="/experiences" className="px-7 py-3 rounded-full border border-warmwhite/70 hover:bg-warmwhite/10 transition-colors">
+                Explore the Experience
+              </Link>
+            </div>
           </div>
         </div>
       </section>
