@@ -12,16 +12,23 @@ UPDATE properties SET total_units = 2 WHERE name = 'The Sunrise Room' AND total_
 UPDATE properties SET total_units = 2 WHERE name = 'The Pinewood Suite' AND total_units IS NULL;
 UPDATE properties SET total_units = 1 WHERE name = 'The Mist Cottage' AND total_units IS NULL;
 
+-- Base nightly rate per room (the <=5-night, off-peak rate). Longer-stay discounts
+-- and peak-season surcharges are computed dynamically from this - see
+-- app.pricing.room.* in application.yml, applied via RoomPricing.
+UPDATE properties SET price_per_night = 3000.00 WHERE name = 'The Sunrise Room';
+UPDATE properties SET price_per_night = 3500.00 WHERE name = 'The Pinewood Suite';
+UPDATE properties SET price_per_night = 4000.00 WHERE name = 'The Mist Cottage';
+
 INSERT INTO properties (name, description, price_per_night, max_guests, private_balcony, workspace_available, hero_image_url, total_units)
-SELECT 'The Sunrise Room', 'A warm, sunlit room with an oversized private balcony facing the eastern ridge. Perfect for slow mornings and mountain coffee.', 8500.00, 2, true, true, '/images/rooms/sunrise-room.svg', 2
+SELECT 'The Sunrise Room', 'A warm, sunlit room with an oversized private balcony facing the eastern ridge. Perfect for slow mornings and mountain coffee.', 3000.00, 2, true, true, '/images/rooms/sunrise-room.svg', 2
 WHERE NOT EXISTS (SELECT 1 FROM properties WHERE name = 'The Sunrise Room');
 
 INSERT INTO properties (name, description, price_per_night, max_guests, private_balcony, workspace_available, hero_image_url, total_units)
-SELECT 'The Pinewood Suite', 'Spacious suite with wood interiors, a reading nook, and views over the pine valley below.', 11500.00, 3, true, true, '/images/rooms/pinewood-suite.svg', 2
+SELECT 'The Pinewood Suite', 'Spacious suite with wood interiors, a reading nook, and views over the pine valley below.', 3500.00, 3, true, true, '/images/rooms/pinewood-suite.svg', 2
 WHERE NOT EXISTS (SELECT 1 FROM properties WHERE name = 'The Pinewood Suite');
 
 INSERT INTO properties (name, description, price_per_night, max_guests, private_balcony, workspace_available, hero_image_url, total_units)
-SELECT 'The Mist Cottage', 'A standalone cottage tucked against the tree line, quiet and private, with a fireplace for cool evenings.', 14000.00, 4, true, false, '/images/rooms/mist-cottage.svg', 1
+SELECT 'The Mist Cottage', 'A standalone cottage tucked against the tree line, quiet and private, with a fireplace for cool evenings.', 4000.00, 4, true, false, '/images/rooms/mist-cottage.svg', 1
 WHERE NOT EXISTS (SELECT 1 FROM properties WHERE name = 'The Mist Cottage');
 
 -- Migrate placeholder paths from .jpg (never populated) to the generated .svg placeholders

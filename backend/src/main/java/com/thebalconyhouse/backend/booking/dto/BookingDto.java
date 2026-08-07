@@ -25,5 +25,9 @@ public record BookingDto(
         String paymentMethod,
         String paymentReference,
         int childrenCount,
-        BigDecimal childcareFee
+        BigDecimal childcareFee,
+        boolean fullBoard,
+        BigDecimal fullBoardFee,
+        int discountPercent,
+        BigDecimal discountAmount
 ) {}

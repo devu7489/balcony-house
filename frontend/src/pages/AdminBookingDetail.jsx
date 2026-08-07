@@ -115,7 +115,10 @@ export default function AdminBookingDetail() {
                 <div className="flex items-center gap-3">
                   {booking.amount != null && (
                     <span className="font-serif text-lg">
-                      ₹{(Number(booking.amount) + Number(booking.childcareFee || 0)).toLocaleString()}
+                      ₹{(
+                        Number(booking.amount) + Number(booking.childcareFee || 0) + Number(booking.fullBoardFee || 0)
+                        - Number(booking.discountAmount || 0)
+                      ).toLocaleString()}
                     </span>
                   )}
                   <PaymentBadge status={booking.paymentStatus} />
@@ -123,6 +126,16 @@ export default function AdminBookingDetail() {
                 {booking.childrenCount > 0 && (
                   <p className="text-sm text-charcoal/60">
                     incl. Kids Play Zone &middot; {booking.childrenCount} child{booking.childrenCount === 1 ? '' : 'ren'} &middot; ₹{Number(booking.childcareFee).toLocaleString()}
+                  </p>
+                )}
+                {booking.fullBoard && (
+                  <p className="text-sm text-charcoal/60">
+                    incl. Full Board &middot; ₹{Number(booking.fullBoardFee).toLocaleString()}
+                  </p>
+                )}
+                {booking.discountPercent > 0 && (
+                  <p className="text-sm text-charcoal/60">
+                    {booking.discountPercent}% discount &middot; -₹{Number(booking.discountAmount).toLocaleString()}
                   </p>
                 )}
                 {(booking.paymentMethod || booking.paymentReference) && (

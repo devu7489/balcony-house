@@ -41,6 +41,14 @@ public class Booking {
 
     private BigDecimal childcareFee = BigDecimal.ZERO;
 
+    private boolean fullBoard = false;
+
+    private BigDecimal fullBoardFee = BigDecimal.ZERO;
+
+    private int discountPercent = 0;
+
+    private BigDecimal discountAmount = BigDecimal.ZERO;
+
     protected Booking() {}
 
     public Booking(Long propertyId, String guestEmail, String guestName, String guestPhone,
@@ -90,5 +98,17 @@ public class Booking {
     public void setChildcare(int childrenCount, BigDecimal childcareFee) {
         this.childrenCount = childrenCount;
         this.childcareFee = childcareFee;
+    }
+    public boolean isFullBoard() { return fullBoard; }
+    public BigDecimal getFullBoardFee() { return fullBoardFee; }
+    public void setFullBoard(boolean fullBoard, BigDecimal fullBoardFee) {
+        this.fullBoard = fullBoard;
+        this.fullBoardFee = fullBoardFee;
+    }
+    public int getDiscountPercent() { return discountPercent; }
+    public BigDecimal getDiscountAmount() { return discountAmount; }
+    public void setDiscount(int discountPercent, BigDecimal discountAmount) {
+        this.discountPercent = discountPercent;
+        this.discountAmount = discountAmount;
     }
 }

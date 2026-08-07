@@ -1,0 +1,20 @@
+# Auto-loaded by `docker compose up` alongside docker-compose.yml (no -f flags
+# needed) for local development only. Production explicitly runs with
+# `-f docker-compose.yml -f docker-compose.prod.yml`, which skips this file
+# entirely - these host port bindings never reach the public server.
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+
+  redis:
+    ports:
+      - "6379:6379"
+
+  backend:
+    ports:
+      - "8080:8080"
+
+  frontend:
+    ports:
+      - "8081:80"

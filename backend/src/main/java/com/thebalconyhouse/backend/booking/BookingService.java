@@ -6,6 +6,8 @@ import com.thebalconyhouse.backend.booking.dto.BookingGroupRequest;
 import com.thebalconyhouse.backend.booking.dto.BookingRequest;
 import com.thebalconyhouse.backend.booking.dto.GroupRoomSelection;
 import com.thebalconyhouse.backend.addon.ChildcarePricing;
+import com.thebalconyhouse.backend.addon.FullBoardPricing;
+import com.thebalconyhouse.backend.addon.RoomPricing;
 import com.thebalconyhouse.backend.common.ForbiddenException;
 import com.thebalconyhouse.backend.common.ResourceNotFoundException;
 import com.thebalconyhouse.backend.property.Property;
@@ -30,25 +32,34 @@ public class BookingService {
     private final BookingRepository bookingRepository;
     private final BookingGroupRepository bookingGroupRepository;
     private final PropertyRepository propertyRepository;
+    private final RoomPricing roomPricing;
+    private final ChildcarePricing childcarePricing;
+    private final FullBoardPricing fullBoardPricing;
 
     public BookingService(BookingRepository bookingRepository, BookingGroupRepository bookingGroupRepository,
-                           PropertyRepository propertyRepository) {
+                           PropertyRepository propertyRepository, RoomPricing roomPricing,
+                           ChildcarePricing childcarePricing, FullBoardPricing fullBoardPricing) {
         this.bookingRepository = bookingRepository;
         this.bookingGroupRepository = bookingGroupRepository;
         this.propertyRepository = propertyRepository;
+        this.roomPricing = roomPricing;
+        this.childcarePricing = childcarePricing;
+        this.fullBoardPricing = fullBoardPricing;
     }
 
     public AvailabilityDto checkAvailability(Long propertyId, LocalDate checkIn, LocalDate checkOut) {
         Property property = findProperty(propertyId);
         int unitsLeft = unitsLeft(property, checkIn, checkOut);
-        return new AvailabilityDto(unitsLeft > 0, Math.max(unitsLeft, 0));
+        long nights = ChronoUnit.DAYS.between(checkIn, checkOut);
+        BigDecimal price = nights > 0 ? roomPricing.priceForStay(property, checkIn, nights) : property.getPricePerNight();
+        return new AvailabilityDto(unitsLeft > 0, Math.max(unitsLeft, 0), price);
     }
 
     @Transactional
     public BookingDto create(BookingRequest request, String guestEmail, String guestName) {
         return createInternal(request.propertyId(), guestEmail, guestName, request.guestPhone(),
                 request.checkIn(), request.checkOut(), request.guests(), request.notes(), null,
-                PaymentStatus.PENDING, null, null, 0);
+                PaymentStatus.PENDING, null, null, 0, false, 0, 0);
     }
 
     @Transactional
@@ -58,7 +69,8 @@ public class BookingService {
         String paymentReference = request.paymentReceived() ? request.paymentReference() : null;
         return createInternal(request.propertyId(), request.guestEmail(), request.guestName(), request.guestPhone(),
                 request.checkIn(), request.checkOut(), request.guests(), request.notes(), null,
-                paymentStatus, paymentMethod, paymentReference, request.childrenCount());
+                paymentStatus, paymentMethod, paymentReference, request.childrenCount(),
+                request.fullBoard(), request.guests(), request.discountPercent());
     }
 
     /**
@@ -79,33 +91,46 @@ public class BookingService {
         BookingGroup group = bookingGroupRepository.save(new BookingGroup(guestEmail, guestName, request.guestPhone(),
                 request.checkIn(), request.checkOut(), request.notes(), Instant.now()));
 
+        int totalGuests = request.rooms().stream().mapToInt(GroupRoomSelection::guests).sum();
+
         return request.rooms().stream()
                 .map(selection -> createInternal(selection.propertyId(), guestEmail, guestName, request.guestPhone(),
                         request.checkIn(), request.checkOut(), selection.guests(), request.notes(), group.getId(),
-                        PaymentStatus.PENDING, null, null, request.childrenCount()))
+                        PaymentStatus.PENDING, null, null, request.childrenCount(),
+                        request.fullBoard(), totalGuests, 0))
                 .toList();
     }
 
     private BookingDto createInternal(Long propertyId, String guestEmail, String guestName, String guestPhone,
                                        LocalDate checkIn, LocalDate checkOut, int guests, String notes, Long bookingGroupId,
                                        PaymentStatus initialPaymentStatus, String paymentMethod, String paymentReference,
-                                       int childrenCount) {
+                                       int childrenCount, boolean fullBoard, int totalGuestsForFullBoard, int discountPercent) {
         Property property = findProperty(propertyId);
         validateRoom(property, checkIn, checkOut, guests, 0);
+
+        long nights = ChronoUnit.DAYS.between(checkIn, checkOut);
+        BigDecimal amount = computeAmount(property, checkIn, nights);
+        BigDecimal childcareFee = childcarePricing.totalPerChild(nights).multiply(BigDecimal.valueOf(childrenCount));
+        BigDecimal fullBoardFee = fullBoard
+                ? fullBoardPricing.getPricePerPersonPerDay().multiply(BigDecimal.valueOf(totalGuestsForFullBoard)).multiply(BigDecimal.valueOf(nights))
+                : BigDecimal.ZERO;
+        BigDecimal discountAmount = amount.add(childcareFee).add(fullBoardFee)
+                .multiply(BigDecimal.valueOf(discountPercent)).divide(BigDecimal.valueOf(100));
 
         Booking booking = new Booking(property.getId(), guestEmail, guestName, guestPhone,
                 checkIn, checkOut, guests, notes, Instant.now());
         booking.setBookingGroupId(bookingGroupId);
-        booking.setAmount(computeAmount(property, checkIn, checkOut));
+        booking.setAmount(amount);
         booking.setInitialPayment(initialPaymentStatus, paymentMethod, paymentReference);
-        booking.setChildcare(childrenCount, ChildcarePricing.PRICE_PER_CHILD.multiply(BigDecimal.valueOf(childrenCount)));
+        booking.setChildcare(childrenCount, childcareFee);
+        booking.setFullBoard(fullBoard, fullBoardFee);
+        booking.setDiscount(discountPercent, discountAmount);
         Booking saved = bookingRepository.save(booking);
         return toDto(saved, property);
     }
 
-    private BigDecimal computeAmount(Property property, LocalDate checkIn, LocalDate checkOut) {
-        long nights = ChronoUnit.DAYS.between(checkIn, checkOut);
-        return property.getPricePerNight().multiply(BigDecimal.valueOf(nights));
+    private BigDecimal computeAmount(Property property, LocalDate checkIn, long nights) {
+        return roomPricing.priceForStay(property, checkIn, nights).multiply(BigDecimal.valueOf(nights));
     }
 
     private void validateRoom(Property property, LocalDate checkIn, LocalDate checkOut, int guests, int alreadyConsumed) {
@@ -320,6 +345,7 @@ public class BookingService {
                 b.getGuestEmail(), b.getGuestName(), b.getGuestPhone(),
                 b.getCheckIn(), b.getCheckOut(), b.getGuests(), b.getNotes(), b.getStatus(),
                 b.getBookingGroupId(), b.getAmount(), b.getPaymentStatus(), b.getPaymentMethod(),
-                b.getPaymentReference(), b.getChildrenCount(), b.getChildcareFee());
+                b.getPaymentReference(), b.getChildrenCount(), b.getChildcareFee(),
+                b.isFullBoard(), b.getFullBoardFee(), b.getDiscountPercent(), b.getDiscountAmount());
     }
 }

@@ -73,7 +73,9 @@ export default function AdminTripDetail() {
   const anyConfirmed = bookings.some((b) => b.status === 'CONFIRMED')
   const anyCheckedIn = bookings.some((b) => b.status === 'CHECKED_IN')
   const anyActive = anyConfirmed || anyCheckedIn
-  const totalAmount = bookings.reduce((sum, b) => sum + Number(b.amount || 0), 0) + Number(first.childcareFee || 0)
+  const totalAmount = bookings.reduce((sum, b) => sum + Number(b.amount || 0), 0)
+    + Number(first.childcareFee || 0)
+    + Number(first.fullBoardFee || 0)
   const paymentStatus = first.paymentStatus
 
   return (
@@ -115,6 +117,11 @@ export default function AdminTripDetail() {
             {first.childrenCount > 0 && (
               <p className="text-sm text-charcoal/60">
                 incl. Kids Play Zone &middot; {first.childrenCount} child{first.childrenCount === 1 ? '' : 'ren'} &middot; ₹{Number(first.childcareFee).toLocaleString()}
+              </p>
+            )}
+            {first.fullBoard && (
+              <p className="text-sm text-charcoal/60">
+                incl. Full Board &middot; ₹{Number(first.fullBoardFee).toLocaleString()}
               </p>
             )}
             {(first.paymentMethod || first.paymentReference) && (

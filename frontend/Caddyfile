@@ -1,0 +1,39 @@
+{$SITE_ADDRESS:http://localhost} {
+	root * /srv
+	encode gzip
+
+	# Proxy API + OAuth endpoints to the backend service so cookies stay same-site.
+	# Caddy sends X-Forwarded-Host/-Proto by default, which the backend now trusts
+	# (server.forward-headers-strategy: framework) to build the right OAuth2 redirect
+	# URI for whatever domain this is actually running on - no hardcoded Host header
+	# needed, unlike the old nginx.conf.
+	#
+	# X-Forwarded-Proto normally reflects Caddy's own connection (http locally,
+	# https in production - both correct by default). FORWARDED_PROTO only needs
+	# setting when something in front of Caddy terminates TLS that Caddy itself
+	# doesn't know about (e.g. tunneling local dev through ngrok) - defaults to
+	# "http" so normal local dev and production behavior is unchanged.
+	handle /api/* {
+		reverse_proxy backend:8080 {
+			header_up X-Forwarded-Proto {$FORWARDED_PROTO:http}
+		}
+	}
+
+	handle /oauth2/* {
+		reverse_proxy backend:8080 {
+			header_up X-Forwarded-Proto {$FORWARDED_PROTO:http}
+		}
+	}
+
+	handle /login/* {
+		reverse_proxy backend:8080 {
+			header_up X-Forwarded-Proto {$FORWARDED_PROTO:http}
+		}
+	}
+
+	# SPA fallback
+	handle {
+		try_files {path} /index.html
+		file_server
+	}
+}

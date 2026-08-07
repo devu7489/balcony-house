@@ -9,8 +9,13 @@ import { groupBookings } from '../lib/groupBookings'
 const emptyForm = {
   propertyId: '', guestName: '', guestPhone: '', guestEmail: '', checkIn: '', checkOut: '', guests: 1, notes: '',
   paymentReceived: false, paymentMethod: 'Cash', paymentReference: '', childrenCount: 0,
+  fullBoard: false, discountPercent: 0,
 }
-const totalAmount = (bookings) => bookings.reduce((sum, b) => sum + Number(b.amount || 0), 0) + Number(bookings[0]?.childcareFee || 0)
+const totalAmount = (bookings) =>
+  bookings.reduce((sum, b) => sum + Number(b.amount || 0), 0)
+  + Number(bookings[0]?.childcareFee || 0)
+  + Number(bookings[0]?.fullBoardFee || 0)
+  - Number(bookings[0]?.discountAmount || 0)
 
 function AdminBookingRow({ b, to, compact = false }) {
   return (
@@ -37,6 +42,12 @@ function AdminBookingRow({ b, to, compact = false }) {
         {!compact && b.childrenCount > 0 && (
           <p className="text-charcoal/50 text-xs mt-0.5">Kids Play Zone &middot; {b.childrenCount} child{b.childrenCount === 1 ? '' : 'ren'}</p>
         )}
+        {!compact && b.fullBoard && (
+          <p className="text-charcoal/50 text-xs mt-0.5">Full Board</p>
+        )}
+        {!compact && b.discountPercent > 0 && (
+          <p className="text-charcoal/50 text-xs mt-0.5">{b.discountPercent}% discount applied</p>
+        )}
       </div>
       <div className="flex flex-col items-end gap-2">
         <StatusBadge status={b.status} />
@@ -58,7 +69,8 @@ export default function Admin() {
   const [checkingAvailability, setCheckingAvailability] = useState(false)
   const [submitStatus, setSubmitStatus] = useState('idle')
   const [submitError, setSubmitError] = useState('')
-  const [childcarePricing, setChildcarePricing] = useState({ pricePerChild: 0, maxChildren: 2 })
+  const [childcarePricing, setChildcarePricing] = useState({ perDayRate: 0, totalPerChild: 0, maxChildren: 2 })
+  const [fullBoardPricing, setFullBoardPricing] = useState({ pricePerPersonPerDay: 0 })
 
   const loadBookings = () => apiClient.get('/admin/bookings').then(({ data }) => setBookings(data))
 
@@ -66,7 +78,7 @@ export default function Admin() {
     Promise.all([
       loadBookings(),
       apiClient.get('/properties').then(({ data }) => setProperties(data)),
-      apiClient.get('/addons/childcare').then(({ data }) => setChildcarePricing(data)).catch(() => {}),
+      apiClient.get('/addons/fullboard').then(({ data }) => setFullBoardPricing(data)).catch(() => {}),
     ]).finally(() => setLoading(false))
   }, [])
 
@@ -81,6 +93,15 @@ export default function Admin() {
       .catch(() => setAvailability(null))
       .finally(() => setCheckingAvailability(false))
   }, [form.propertyId, form.checkIn, form.checkOut])
+
+  const formNights = form.checkIn && form.checkOut && form.checkOut > form.checkIn
+    ? Math.round((new Date(form.checkOut) - new Date(form.checkIn)) / 86400000)
+    : 0
+
+  useEffect(() => {
+    if (formNights <= 0) return
+    apiClient.get('/addons/childcare', { params: { nights: formNights } }).then(({ data }) => setChildcarePricing(data)).catch(() => {})
+  }, [formNights])
 
   const selectedProperty = properties.find((p) => String(p.id) === String(form.propertyId))
 
@@ -102,6 +123,8 @@ export default function Admin() {
         paymentMethod: form.paymentReceived ? form.paymentMethod : null,
         paymentReference: form.paymentReceived ? (form.paymentReference || null) : null,
         childrenCount: form.childrenCount,
+        fullBoard: form.fullBoard,
+        discountPercent: form.discountPercent,
       })
       setSubmitStatus('idle')
       setForm(emptyForm)
@@ -240,25 +263,91 @@ export default function Admin() {
 
           <div className="border-t border-stone pt-4">
             <p className="text-sm text-charcoal/70 mb-2">Kids Play Zone <span className="text-charcoal/40">(optional)</span></p>
+            {formNights <= 0 ? (
+              <p className="text-xs text-charcoal/40">Pick check-in/check-out above to price this.</p>
+            ) : (
+              <>
+                <p className="text-xs text-charcoal/50 mb-2">₹{childcarePricing.perDayRate}/day per child for this {formNights}-night stay.</p>
+                <div className="flex items-center gap-2">
+                  {Array.from({ length: childcarePricing.maxChildren + 1 }, (_, n) => n).map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => setForm({ ...form, childrenCount: n })}
+                      className={`px-4 py-2 rounded-full text-sm border transition-colors ${
+                        form.childrenCount === n ? 'bg-olive text-warmwhite border-olive' : 'border-stone text-charcoal/70 hover:border-olive'
+                      }`}
+                    >
+                      {n === 0 ? 'None' : `${n} child${n === 1 ? '' : 'ren'}`}
+                    </button>
+                  ))}
+                </div>
+                {form.childrenCount > 0 && (
+                  <p className="text-sm text-olive mt-2">
+                    + ₹{(childcarePricing.totalPerChild * form.childrenCount).toLocaleString()} for {form.childrenCount} child{form.childrenCount === 1 ? '' : 'ren'}
+                    {' '}(₹{childcarePricing.perDayRate}/day × {formNights} night{formNights === 1 ? '' : 's'} each)
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+
+          <div className="border-t border-stone pt-4">
+            <p className="text-sm text-charcoal/70 mb-2">Full Board <span className="text-charcoal/40">(optional)</span></p>
+            {formNights <= 0 ? (
+              <p className="text-xs text-charcoal/40">Pick check-in/check-out above to price this.</p>
+            ) : (
+              <>
+                <p className="text-xs text-charcoal/50 mb-2">
+                  Breakfast, lunch &amp; dinner &mdash; ₹{fullBoardPricing.pricePerPersonPerDay}/person/day.
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, fullBoard: false })}
+                    className={`px-4 py-2 rounded-full text-sm border transition-colors ${
+                      !form.fullBoard ? 'bg-olive text-warmwhite border-olive' : 'border-stone text-charcoal/70 hover:border-olive'
+                    }`}
+                  >
+                    No
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, fullBoard: true })}
+                    className={`px-4 py-2 rounded-full text-sm border transition-colors ${
+                      form.fullBoard ? 'bg-olive text-warmwhite border-olive' : 'border-stone text-charcoal/70 hover:border-olive'
+                    }`}
+                  >
+                    Yes
+                  </button>
+                </div>
+                {form.fullBoard && (
+                  <p className="text-sm text-olive mt-2">
+                    + ₹{(fullBoardPricing.pricePerPersonPerDay * Number(form.guests) * formNights).toLocaleString()}
+                    {' '}for {form.guests} guest{Number(form.guests) === 1 ? '' : 's'}
+                    {' '}(₹{fullBoardPricing.pricePerPersonPerDay}/person/day × {formNights} night{formNights === 1 ? '' : 's'})
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+
+          <div className="border-t border-stone pt-4">
+            <p className="text-sm text-charcoal/70 mb-2">Discount <span className="text-charcoal/40">(optional)</span></p>
             <div className="flex items-center gap-2">
-              {Array.from({ length: childcarePricing.maxChildren + 1 }, (_, n) => n).map((n) => (
+              {[0, 10, 15, 20].map((pct) => (
                 <button
-                  key={n}
+                  key={pct}
                   type="button"
-                  onClick={() => setForm({ ...form, childrenCount: n })}
+                  onClick={() => setForm({ ...form, discountPercent: pct })}
                   className={`px-4 py-2 rounded-full text-sm border transition-colors ${
-                    form.childrenCount === n ? 'bg-olive text-warmwhite border-olive' : 'border-stone text-charcoal/70 hover:border-olive'
+                    form.discountPercent === pct ? 'bg-olive text-warmwhite border-olive' : 'border-stone text-charcoal/70 hover:border-olive'
                   }`}
                 >
-                  {n === 0 ? 'None' : `${n} child${n === 1 ? '' : 'ren'}`}
+                  {pct === 0 ? 'None' : `${pct}%`}
                 </button>
               ))}
             </div>
-            {form.childrenCount > 0 && (
-              <p className="text-sm text-olive mt-2">
-                + ₹{(childcarePricing.pricePerChild * form.childrenCount).toLocaleString()} flat, whole trip
-              </p>
-            )}
           </div>
 
           <div className="border-t border-stone pt-4">
@@ -353,6 +442,9 @@ export default function Admin() {
                       <p className="text-xs text-charcoal/50 mt-1">
                         incl. Kids Play Zone &middot; {entry.bookings[0].childrenCount} child{entry.bookings[0].childrenCount === 1 ? '' : 'ren'}
                       </p>
+                    )}
+                    {entry.bookings[0].fullBoard && (
+                      <p className="text-xs text-charcoal/50 mt-1">incl. Full Board</p>
                     )}
                   </div>
                   <Link to={`/admin/trips/${entry.bookingGroupId}`} className="text-xs text-olive hover:underline shrink-0">

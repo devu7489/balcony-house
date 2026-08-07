@@ -1,0 +1,18 @@
+# Used explicitly in production: docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
+# Deliberately does NOT expose postgres/redis/backend on the host - only Caddy
+# (frontend) is reachable from outside, on 80 (redirects to HTTPS) and 443.
+services:
+  postgres:
+    restart: always
+
+  redis:
+    restart: always
+
+  backend:
+    restart: always
+
+  frontend:
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"

@@ -6,7 +6,7 @@ import { getCart, setNotes as saveNotes, removeRoom, clearCart } from '../lib/ca
 import PaymentBadge from '../components/PaymentBadge'
 
 const roomTotal = (bookings) => bookings.reduce((sum, b) => sum + Number(b.amount || 0), 0)
-const tripTotal = (bookings) => roomTotal(bookings) + Number(bookings[0]?.childcareFee || 0)
+const tripTotal = (bookings) => roomTotal(bookings) + Number(bookings[0]?.childcareFee || 0) + Number(bookings[0]?.fullBoardFee || 0)
 
 export default function Checkout() {
   const { user, login } = useAuth()
@@ -22,10 +22,23 @@ export default function Checkout() {
   const [payStatus, setPayStatus] = useState('idle')
   const [payError, setPayError] = useState('')
   const [childrenCount, setChildrenCount] = useState(0)
-  const [childcarePricing, setChildcarePricing] = useState({ pricePerChild: 0, maxChildren: 2 })
+  const [childcarePricing, setChildcarePricing] = useState({ perDayRate: 0, totalPerChild: 0, maxChildren: 2 })
+  const [fullBoard, setFullBoard] = useState(false)
+  const [fullBoardPricing, setFullBoardPricing] = useState({ pricePerPersonPerDay: 0 })
+
+  const nights = cart.checkIn && cart.checkOut
+    ? Math.round((new Date(cart.checkOut) - new Date(cart.checkIn)) / 86400000)
+    : 0
+  const totalGuests = cart.rooms.reduce((sum, r) => sum + r.guests, 0)
+  const fullBoardTotal = fullBoardPricing.pricePerPersonPerDay * totalGuests * nights
 
   useEffect(() => {
-    apiClient.get('/addons/childcare').then(({ data }) => setChildcarePricing(data)).catch(() => {})
+    if (nights <= 0) return
+    apiClient.get('/addons/childcare', { params: { nights } }).then(({ data }) => setChildcarePricing(data)).catch(() => {})
+  }, [nights])
+
+  useEffect(() => {
+    apiClient.get('/addons/fullboard').then(({ data }) => setFullBoardPricing(data)).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -66,6 +79,7 @@ export default function Checkout() {
         notes: notes || null,
         rooms: cart.rooms.map((r) => ({ propertyId: r.propertyId, guests: r.guests })),
         childrenCount,
+        fullBoard,
       })
       clearCart()
       setConfirmed(data)
@@ -94,6 +108,8 @@ export default function Checkout() {
     const total = tripTotal(confirmed)
     const childcareFee = Number(confirmed[0]?.childcareFee || 0)
     const bookedChildren = confirmed[0]?.childrenCount || 0
+    const fullBoardFee = Number(confirmed[0]?.fullBoardFee || 0)
+    const bookedFullBoard = confirmed[0]?.fullBoard
     return (
       <div className="max-w-xl mx-auto px-6 lg:px-10 py-20 text-center">
         <h1 className="font-serif text-3xl mb-2">Your room is held.</h1>
@@ -110,6 +126,12 @@ export default function Checkout() {
             <div className="flex justify-between text-sm py-2 border-b border-stone last:border-0">
               <span className="text-charcoal/70">Kids Play Zone &middot; {bookedChildren} child{bookedChildren === 1 ? '' : 'ren'}</span>
               <span className="text-charcoal/80">₹{childcareFee.toLocaleString()}</span>
+            </div>
+          )}
+          {bookedFullBoard && (
+            <div className="flex justify-between text-sm py-2 border-b border-stone last:border-0">
+              <span className="text-charcoal/70">Full Board</span>
+              <span className="text-charcoal/80">₹{fullBoardFee.toLocaleString()}</span>
             </div>
           )}
           <div className="flex justify-between pt-3 mt-1 font-serif text-lg">
@@ -136,6 +158,7 @@ export default function Checkout() {
   if (submitStatus === 'success' && confirmed) {
     const allPaid = confirmed.every((b) => b.paymentStatus === 'PAID')
     const bookedChildren = confirmed[0]?.childrenCount || 0
+    const bookedFullBoard = confirmed[0]?.fullBoard
     return (
       <div className="max-w-2xl mx-auto px-6 lg:px-10 py-20">
         <h1 className="font-serif text-3xl mb-4">{allPaid ? 'Trip confirmed & paid — see you soon.' : 'Trip confirmed — see you soon.'}</h1>
@@ -158,6 +181,10 @@ export default function Checkout() {
               + Kids Play Zone &middot; {bookedChildren} child{bookedChildren === 1 ? '' : 'ren'} for the whole trip
             </p>
           )}
+          {bookedFullBoard && (
+            <p className="text-sm text-charcoal/60 px-1">+ Full Board for everyone, whole trip</p>
+          )}
+          <p className="text-sm text-charcoal/50 px-1">Breakfast included every morning.</p>
         </div>
         <Link to="/my-bookings" className="inline-block px-7 py-3 rounded-full bg-olive text-warmwhite hover:bg-charcoal transition-colors">
           View my bookings
@@ -180,7 +207,8 @@ export default function Checkout() {
       <Link to="/stay" className="text-sm text-olive hover:underline">&larr; Back to Stay</Link>
 
       <h1 className="font-serif text-3xl mt-6 mb-2">Review your trip</h1>
-      <p className="text-charcoal/70 mb-8">{cart.checkIn} &rarr; {cart.checkOut}</p>
+      <p className="text-charcoal/70 mb-1">{cart.checkIn} &rarr; {cart.checkOut}</p>
+      <p className="text-charcoal/50 text-sm mb-8">Breakfast included every morning.</p>
 
       <div className="space-y-4 mb-6">
         {cart.rooms.map((r) => {
@@ -196,6 +224,11 @@ export default function Checkout() {
                 <div className="flex-1">
                   <h2 className="font-serif text-lg">{r.propertyName}</h2>
                   <p className="text-charcoal/60 text-sm">{r.guests} guest{r.guests === 1 ? '' : 's'}</p>
+                  {avail?.pricePerNight != null && nights > 0 && (
+                    <p className="text-charcoal/50 text-xs mt-0.5">
+                      ₹{avail.pricePerNight.toLocaleString()}/night × {nights} night{nights === 1 ? '' : 's'} = ₹{(avail.pricePerNight * nights).toLocaleString()}
+                    </p>
+                  )}
                 </div>
                 <button onClick={() => handleRemove(r.propertyId)} className="text-xs text-red-600 hover:underline">
                   Remove
@@ -214,7 +247,7 @@ export default function Checkout() {
       <div className="bg-white border border-stone rounded-xl2 p-6 mb-6">
         <h2 className="font-serif text-lg mb-1">Kids Play Zone <span className="text-charcoal/40 text-sm font-sans">(optional)</span></h2>
         <p className="text-charcoal/60 text-sm mb-4">
-          Supervised on-site play zone — one flat fee covers your whole trip, however many nights you stay.
+          Supervised on-site play zone, priced per day per child — ₹{childcarePricing.perDayRate}/day for this {nights}-night stay.
         </p>
         <div className="flex items-center gap-2">
           {Array.from({ length: childcarePricing.maxChildren + 1 }, (_, n) => n).map((n) => (
@@ -232,7 +265,41 @@ export default function Checkout() {
         </div>
         {childrenCount > 0 && (
           <p className="text-sm text-olive mt-3">
-            + ₹{(childcarePricing.pricePerChild * childrenCount).toLocaleString()} for {childrenCount} child{childrenCount === 1 ? '' : 'ren'}, whole trip
+            + ₹{(childcarePricing.totalPerChild * childrenCount).toLocaleString()} for {childrenCount} child{childrenCount === 1 ? '' : 'ren'}
+            {' '}(₹{childcarePricing.perDayRate}/day × {nights} night{nights === 1 ? '' : 's'} each)
+          </p>
+        )}
+      </div>
+
+      <div className="bg-white border border-stone rounded-xl2 p-6 mb-6">
+        <h2 className="font-serif text-lg mb-1">Full Board <span className="text-charcoal/40 text-sm font-sans">(optional)</span></h2>
+        <p className="text-charcoal/60 text-sm mb-4">
+          Breakfast, buffet lunch, and dinner for everyone on the trip — ₹{fullBoardPricing.pricePerPersonPerDay}/person/day.
+        </p>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setFullBoard(false)}
+            className={`px-4 py-2 rounded-full text-sm border transition-colors ${
+              !fullBoard ? 'bg-olive text-warmwhite border-olive' : 'border-stone text-charcoal/70 hover:border-olive'
+            }`}
+          >
+            No
+          </button>
+          <button
+            type="button"
+            onClick={() => setFullBoard(true)}
+            className={`px-4 py-2 rounded-full text-sm border transition-colors ${
+              fullBoard ? 'bg-olive text-warmwhite border-olive' : 'border-stone text-charcoal/70 hover:border-olive'
+            }`}
+          >
+            Yes
+          </button>
+        </div>
+        {fullBoard && (
+          <p className="text-sm text-olive mt-3">
+            + ₹{fullBoardTotal.toLocaleString()} for {totalGuests} guest{totalGuests === 1 ? '' : 's'}
+            {' '}(₹{fullBoardPricing.pricePerPersonPerDay}/person/day × {nights} night{nights === 1 ? '' : 's'})
           </p>
         )}
       </div>

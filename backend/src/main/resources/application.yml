@@ -1,5 +1,9 @@
 server:
   port: 8080
+  # Trusts X-Forwarded-Host/-Proto/-Port from the reverse proxy (Caddy) so Spring
+  # computes the OAuth2 redirect_uri from the real public domain, not the internal
+  # container address - works for any domain without hardcoding one anywhere.
+  forward-headers-strategy: framework
   servlet:
     session:
       timeout: ${SESSION_TIMEOUT:30m}
@@ -64,6 +68,21 @@ app:
   cors:
     allowed-origins: ${CORS_ORIGINS:http://localhost:5173}
   admin-emails: ${ADMIN_EMAILS:}
+
+  # Base rates live per-property in the database (they genuinely differ per room);
+  # everything here is the shared, tunable math applied on top of those bases.
+  pricing:
+    room:
+      mid-stay-ratio: ${ROOM_MID_STAY_RATIO:0.80}       # 6-10 nights
+      long-stay-ratio: ${ROOM_LONG_STAY_RATIO:0.60}     # 11+ nights
+      peak-season-multiplier: ${ROOM_PEAK_MULTIPLIER:1.5}
+      peak-season-months: ${ROOM_PEAK_MONTHS:4,5,6}     # April-June (kids' summer holidays)
+    childcare:
+      short-stay-rate: ${CHILDCARE_SHORT_STAY_RATE:600}   # per child/day, <=5 nights
+      mid-stay-rate: ${CHILDCARE_MID_STAY_RATE:500}       # per child/day, 6-10 nights
+      long-stay-rate: ${CHILDCARE_LONG_STAY_RATE:400}     # per child/day, 11+ nights
+    full-board:
+      price-per-person-per-day: ${FULL_BOARD_RATE:500}
 
 logging:
   level:

@@ -17,5 +17,6 @@ public record BookingGroupRequest(
         @NotNull @Future LocalDate checkOut,
         String notes,
         @NotEmpty List<@Valid GroupRoomSelection> rooms,
-        @Min(0) @Max(2) int childrenCount
+        @Min(0) @Max(2) int childrenCount,
+        boolean fullBoard
 ) {}

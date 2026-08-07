@@ -1,3 +1,5 @@
 package com.thebalconyhouse.backend.property.dto;
 
-public record AvailabilityDto(boolean available, int unitsLeft) {}
+import java.math.BigDecimal;
+
+public record AvailabilityDto(boolean available, int unitsLeft, BigDecimal pricePerNight) {}

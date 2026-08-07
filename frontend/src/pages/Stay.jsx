@@ -120,7 +120,12 @@ export default function Stay() {
                   <li className="px-3 py-1 bg-stone rounded-full">Up to {p.maxGuests} guests</li>
                 </ul>
                 <div className="flex items-center justify-between mb-4">
-                  <p className="font-serif text-lg">₹{p.pricePerNight?.toLocaleString?.() ?? p.pricePerNight} / night</p>
+                  <p className="font-serif text-lg">
+                    ₹{(avail?.pricePerNight ?? p.pricePerNight)?.toLocaleString?.() ?? p.pricePerNight} / night
+                    {avail?.pricePerNight && avail.pricePerNight !== p.pricePerNight && (
+                      <span className="text-xs text-olive font-sans ml-1">(for these dates)</span>
+                    )}
+                  </p>
                   <Link to={`/stay/${p.id}`} className="text-sm text-olive">View details &rarr;</Link>
                 </div>
 

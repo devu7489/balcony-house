@@ -54,7 +54,16 @@ export default function RoomDetail() {
         </div>
       )}
 
-      <p className="font-serif text-xl mb-8">₹{property.pricePerNight?.toLocaleString?.() ?? property.pricePerNight} / night</p>
+      <div className="mb-8">
+        <p className="font-serif text-xl mb-2">
+          From ₹{property.pricePerNight?.toLocaleString?.() ?? property.pricePerNight} / night
+        </p>
+        <p className="text-charcoal/60 text-sm">
+          Stays over 5 nights cost less per night, and rates rise during peak season
+          (April–June). Pick your dates on the next step to see your exact price.
+          Breakfast included every morning.
+        </p>
+      </div>
 
       <button
         onClick={() => navigate('/stay')}

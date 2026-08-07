@@ -33,9 +33,9 @@ kept entirely on the server.
   theme using the specified warm-white / stone / olive / charcoal / wood
   palette with serif headings + sans body.
 - **Docker**: multi-stage Dockerfiles for both apps, `docker-compose.yml`
-  wiring Postgres + Redis + backend + nginx-served frontend together, with
-  the frontend nginx proxying `/api`, `/oauth2`, `/login` to the backend so
-  cookies stay same-site.
+  wiring Postgres + Redis + backend + Caddy-served frontend together, with
+  Caddy proxying `/api`, `/oauth2`, `/login` to the backend so cookies stay
+  same-site (and handling automatic HTTPS in production).
 
 ## What's intentionally left as a next step
 
@@ -59,7 +59,10 @@ This is a skeleton, not the finished brand experience:
 cp .env.example .env
 # then fill in GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET in .env
 # (Google Cloud Console → Credentials → OAuth Client ID → Web application
-#  → Authorized redirect URI: http://localhost:8080/login/oauth2/code/google)
+#  → Authorized redirect URI: http://localhost:8081/login/oauth2/code/google
+#  - port 8081 because that's the frontend/Caddy address the browser actually
+#  uses; the backend now trusts Caddy's forwarded headers to compute this,
+#  see server.forward-headers-strategy in application.yml)
 
 docker compose up --build
 ```

@@ -20,5 +20,7 @@ public record AdminBookingRequest(
         boolean paymentReceived,
         String paymentMethod,
         String paymentReference,
-        @Min(0) @Max(2) int childrenCount
+        @Min(0) @Max(2) int childrenCount,
+        boolean fullBoard,
+        @Min(0) @Max(20) int discountPercent
 ) {}

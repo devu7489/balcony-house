@@ -7,7 +7,10 @@ import PaymentBadge from '../components/PaymentBadge'
 import { groupBookings } from '../lib/groupBookings'
 
 const isCancellable = (status) => status === 'CONFIRMED' || status === 'CHECKED_IN'
-const totalAmount = (bookings) => bookings.reduce((sum, b) => sum + Number(b.amount || 0), 0) + Number(bookings[0]?.childcareFee || 0)
+const totalAmount = (bookings) =>
+  bookings.reduce((sum, b) => sum + Number(b.amount || 0), 0)
+  + Number(bookings[0]?.childcareFee || 0)
+  + Number(bookings[0]?.fullBoardFee || 0)
 
 function RoomLine({ b, showDates = true }) {
   return (
@@ -95,6 +98,7 @@ export default function MyBookings() {
                   {b.childrenCount > 0 && (
                     <p className="px-4 text-xs text-charcoal/50">Kids Play Zone &middot; {b.childrenCount} child{b.childrenCount === 1 ? '' : 'ren'}</p>
                   )}
+                  {b.fullBoard && <p className="px-4 text-xs text-charcoal/50">Full Board</p>}
                   <div className="px-4 pb-4 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       {b.amount != null && <span className="text-sm text-charcoal/60">₹{totalAmount([b]).toLocaleString()}</span>}
@@ -135,6 +139,9 @@ export default function MyBookings() {
                       <p className="text-xs text-charcoal/50 mt-1">
                         incl. Kids Play Zone &middot; {entry.bookings[0].childrenCount} child{entry.bookings[0].childrenCount === 1 ? '' : 'ren'}
                       </p>
+                    )}
+                    {entry.bookings[0].fullBoard && (
+                      <p className="text-xs text-charcoal/50 mt-1">incl. Full Board</p>
                     )}
                   </div>
                   <div className="flex items-center gap-4 shrink-0">
