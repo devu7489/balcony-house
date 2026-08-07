@@ -13,6 +13,7 @@ import Experiences from './pages/Experiences'
 import Cafe from './pages/Cafe'
 import Gallery from './pages/Gallery'
 import Journal from './pages/Journal'
+import JournalDetail from './pages/JournalDetail'
 import About from './pages/About'
 import Contact from './pages/Contact'
 import MyBookings from './pages/MyBookings'
@@ -25,6 +26,7 @@ import AdminTripDetail from './pages/AdminTripDetail'
 import AdminMessages from './pages/AdminMessages'
 import AdminSubscribers from './pages/AdminSubscribers'
 import CompleteProfile from './pages/CompleteProfile'
+import Invoice from './pages/Invoice'
 import NotFound from './pages/NotFound'
 
 export default function App() {
@@ -43,6 +45,7 @@ export default function App() {
             <Route path="/cafe" element={<Cafe />} />
             <Route path="/gallery" element={<Gallery />} />
             <Route path="/journal" element={<Journal />} />
+            <Route path="/journal/:slug" element={<JournalDetail />} />
             <Route path="/about" element={<About />} />
             <Route path="/contact" element={<Contact />} />
             <Route
@@ -58,6 +61,22 @@ export default function App() {
               element={
                 <ProtectedRoute>
                   <CompleteProfile />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/invoice/booking/:id"
+              element={
+                <ProtectedRoute>
+                  <Invoice />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/invoice/trip/:groupId"
+              element={
+                <ProtectedRoute>
+                  <Invoice />
                 </ProtectedRoute>
               }
             />
@@ -87,6 +106,22 @@ export default function App() {
               element={
                 <AdminRoute>
                   <AdminTripDetail />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/admin/invoice/booking/:id"
+              element={
+                <AdminRoute>
+                  <Invoice admin />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/admin/invoice/trip/:groupId"
+              element={
+                <AdminRoute>
+                  <Invoice admin />
                 </AdminRoute>
               }
             />

@@ -4,14 +4,7 @@ import apiClient from '../api/axiosClient'
 import LoadingScreen from '../components/LoadingScreen'
 import Select from '../components/Select'
 import { getCart, setDates as saveDates, addRoom, removeRoom } from '../lib/cart'
-
-const todayIso = () => new Date().toISOString().slice(0, 10)
-const nextDayIso = (dateStr) => {
-  const d = new Date(dateStr)
-  d.setDate(d.getDate() + 1)
-  return d.toISOString().slice(0, 10)
-}
-const tomorrowIso = () => nextDayIso(todayIso())
+import { todayIso, nextDayIso, tomorrowIso } from '../lib/dates'
 
 export default function Stay() {
   const navigate = useNavigate()

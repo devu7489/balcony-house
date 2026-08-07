@@ -15,12 +15,14 @@ import com.thebalconyhouse.backend.common.ResourceNotFoundException;
 import com.thebalconyhouse.backend.property.Property;
 import com.thebalconyhouse.backend.property.PropertyRepository;
 import com.thebalconyhouse.backend.property.dto.AvailabilityDto;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.List;
@@ -38,10 +40,12 @@ public class BookingService {
     private final RoomPricing roomPricing;
     private final ChildcarePricing childcarePricing;
     private final FullBoardPricing fullBoardPricing;
+    private final ZoneId hotelZoneId;
 
     public BookingService(BookingRepository bookingRepository, BookingGroupRepository bookingGroupRepository,
                            PropertyRepository propertyRepository, PaymentRepository paymentRepository,
-                           RoomPricing roomPricing, ChildcarePricing childcarePricing, FullBoardPricing fullBoardPricing) {
+                           RoomPricing roomPricing, ChildcarePricing childcarePricing, FullBoardPricing fullBoardPricing,
+                           @Value("${app.hotel.timezone}") String hotelTimezone) {
         this.bookingRepository = bookingRepository;
         this.bookingGroupRepository = bookingGroupRepository;
         this.propertyRepository = propertyRepository;
@@ -49,6 +53,18 @@ public class BookingService {
         this.roomPricing = roomPricing;
         this.childcarePricing = childcarePricing;
         this.fullBoardPricing = fullBoardPricing;
+        this.hotelZoneId = ZoneId.of(hotelTimezone);
+    }
+
+    /**
+     * "Today" at the front desk, not on the server - the container/host can be running in
+     * any timezone (UTC by default in Docker), but check-in/check-out gating and mid-stay
+     * proration must follow wall-clock time at the property, not wherever the JVM happens
+     * to sit. Using the JVM/system default here previously undercounted elapsed nights by
+     * one for several hours around local midnight in timezones ahead of UTC (e.g. IST).
+     */
+    private LocalDate today() {
+        return LocalDate.now(hotelZoneId);
     }
 
     public AvailabilityDto checkAvailability(Long propertyId, LocalDate checkIn, LocalDate checkOut) {
@@ -184,6 +200,9 @@ public class BookingService {
         if (booking.getRoomNumber() == null || booking.getRoomNumber().isBlank()) {
             throw new IllegalArgumentException("Assign a room number before checking in");
         }
+        if (today().isBefore(booking.getCheckIn())) {
+            throw new IllegalArgumentException("Check-in isn't allowed before the scheduled arrival date (" + booking.getCheckIn() + ")");
+        }
         return transitionTo(booking, BookingStatus.CHECKED_IN);
     }
 
@@ -214,7 +233,7 @@ public class BookingService {
         // to the new room's rate - correct whether this is a same-day pre-arrival swap
         // (elapsedNights resolves to 0) or a genuine mid-stay room change.
         long totalNights = ChronoUnit.DAYS.between(booking.getCheckIn(), booking.getCheckOut());
-        long elapsedNights = ChronoUnit.DAYS.between(booking.getCheckIn(), LocalDate.now());
+        long elapsedNights = ChronoUnit.DAYS.between(booking.getCheckIn(), today());
         BigDecimal newPerNightRate = roomPricing.priceForStay(newProperty, booking.getCheckIn(), totalNights);
         BigDecimal newAmount = RoomPricing.proratedAmount(booking.getAmount(), totalNights, elapsedNights, newPerNightRate);
 
@@ -236,6 +255,9 @@ public class BookingService {
         Booking booking = findBooking(bookingId);
         if (booking.getStatus() != BookingStatus.CHECKED_IN) {
             throw new IllegalArgumentException("Only checked-in bookings can be checked out");
+        }
+        if (today().isBefore(booking.getCheckOut())) {
+            throw new IllegalArgumentException("Check-out isn't allowed before the scheduled departure date (" + booking.getCheckOut() + ")");
         }
         if (booking.getPaymentStatus() != PaymentStatus.PAID) {
             throw new IllegalArgumentException("Record payment before checking this booking out");
@@ -278,6 +300,12 @@ public class BookingService {
         if (anyMissingRoom) {
             throw new IllegalArgumentException("Assign a room number to every room before checking in the trip");
         }
+        LocalDate today = today();
+        boolean anyTooEarly = bookings.stream()
+                .anyMatch(b -> b.getStatus() == BookingStatus.CONFIRMED && today.isBefore(b.getCheckIn()));
+        if (anyTooEarly) {
+            throw new IllegalArgumentException("Check-in isn't allowed before the scheduled arrival date");
+        }
         return bookings.stream()
                 .map(b -> b.getStatus() == BookingStatus.CONFIRMED
                         ? transitionTo(b, BookingStatus.CHECKED_IN)
@@ -289,6 +317,12 @@ public class BookingService {
     public List<BookingDto> checkOutGroup(Long groupId) {
         findGroup(groupId);
         List<Booking> bookings = bookingRepository.findByBookingGroupIdOrderByIdAsc(groupId);
+        LocalDate today = today();
+        boolean anyTooEarly = bookings.stream()
+                .anyMatch(b -> b.getStatus() == BookingStatus.CHECKED_IN && today.isBefore(b.getCheckOut()));
+        if (anyTooEarly) {
+            throw new IllegalArgumentException("Check-out isn't allowed before the scheduled departure date for every room in the trip");
+        }
         boolean anyUnpaid = bookings.stream()
                 .anyMatch(b -> b.getStatus() == BookingStatus.CHECKED_IN && b.getPaymentStatus() != PaymentStatus.PAID);
         if (anyUnpaid) {
@@ -363,7 +397,7 @@ public class BookingService {
         BigDecimal remaining = amount;
         for (Booking b : bookings) {
             if (b.getStatus() == BookingStatus.CANCELLED || b.getPaymentStatus() == PaymentStatus.PAID) continue;
-            BigDecimal due = b.getFullTotal().subtract(b.getAmountPaid());
+            BigDecimal due = payableTotal(b, isFirstInGroup(b, bookings)).subtract(b.getAmountPaid());
             if (due.signum() <= 0) continue;
             BigDecimal thisPayment = remaining == null ? due : remaining.min(due);
             if (thisPayment.signum() <= 0) continue;
@@ -395,7 +429,8 @@ public class BookingService {
      * amount == null means "whatever's still due right now".
      */
     private Booking recordPaymentInternal(Booking booking, BigDecimal amount, String method, String reference) {
-        BigDecimal due = booking.getFullTotal().subtract(booking.getAmountPaid());
+        BigDecimal owed = payableTotal(booking);
+        BigDecimal due = owed.subtract(booking.getAmountPaid());
         BigDecimal amountToRecord = amount != null ? amount : due;
         paymentRepository.save(new Payment(booking.getId(), amountToRecord, method, reference, Instant.now()));
 
@@ -405,8 +440,36 @@ public class BookingService {
         booking.setAmountPaid(totalPaid);
         booking.setPaymentMethod(method);
         booking.setPaymentReference(reference);
-        booking.setPaymentStatus(totalPaid.compareTo(booking.getFullTotal()) >= 0 ? PaymentStatus.PAID : PaymentStatus.PENDING);
+        booking.setPaymentStatus(totalPaid.compareTo(owed) >= 0 ? PaymentStatus.PAID : PaymentStatus.PENDING);
         return bookingRepository.save(booking);
+    }
+
+    /**
+     * Childcare and Full Board fees are trip-wide totals denormalized onto every booking row
+     * in the group (see Booking.childcareFee's own comment) - so naively summing amount +
+     * childcareFee + fullBoardFee per booking (Booking.getFullTotal()) double-counts the
+     * shared addon cost once per room in a multi-room trip. Only the group's first room (by
+     * id) is treated as carrying that shared cost for payment purposes; every other room is
+     * responsible only for its own room amount minus its own discount. A booking with no
+     * group has nothing to share, so its full total is already correct as-is.
+     */
+    private BigDecimal payableTotal(Booking booking) {
+        if (booking.getBookingGroupId() == null) {
+            return booking.getFullTotal();
+        }
+        List<Booking> siblings = bookingRepository.findByBookingGroupIdOrderByIdAsc(booking.getBookingGroupId());
+        return payableTotal(booking, isFirstInGroup(booking, siblings));
+    }
+
+    private BigDecimal payableTotal(Booking booking, boolean isAddonBearer) {
+        if (booking.getBookingGroupId() == null || isAddonBearer) {
+            return booking.getFullTotal();
+        }
+        return booking.getAmount().subtract(booking.getDiscountAmount());
+    }
+
+    private boolean isFirstInGroup(Booking booking, List<Booking> groupSiblings) {
+        return !groupSiblings.isEmpty() && groupSiblings.get(0).getId().equals(booking.getId());
     }
 
     private BookingGroup findGroup(Long groupId) {
@@ -439,8 +502,21 @@ public class BookingService {
         List<Long> bookingIds = bookings.stream().map(Booking::getId).toList();
         Map<Long, List<Payment>> paymentsByBooking = paymentRepository.findByBookingIdInOrderByPaidAtAsc(bookingIds).stream()
                 .collect(java.util.stream.Collectors.groupingBy(Payment::getBookingId));
+        // Every sibling of any group present here is guaranteed to also be present in
+        // `bookings` (findAll/findMine/findByGroupId all return whole groups, never a
+        // partial slice of one), so the addon-bearer can be worked out in memory - no
+        // extra per-booking query needed the way payableTotal(Booking) alone would do.
+        Map<Long, Long> firstIdByGroup = bookings.stream()
+                .filter(b -> b.getBookingGroupId() != null)
+                .collect(java.util.stream.Collectors.groupingBy(Booking::getBookingGroupId,
+                        java.util.stream.Collectors.mapping(Booking::getId, java.util.stream.Collectors.minBy(Long::compareTo))))
+                .entrySet().stream()
+                .collect(java.util.stream.Collectors.toMap(Map.Entry::getKey, e -> e.getValue().orElseThrow()));
         return bookings.stream()
-                .map(b -> toDto(b, propertiesById.get(b.getPropertyId()), paymentsByBooking.getOrDefault(b.getId(), List.of())))
+                .map(b -> {
+                    boolean isAddonBearer = b.getBookingGroupId() == null || b.getId().equals(firstIdByGroup.get(b.getBookingGroupId()));
+                    return toDto(b, propertiesById.get(b.getPropertyId()), paymentsByBooking.getOrDefault(b.getId(), List.of()), isAddonBearer);
+                })
                 .toList();
     }
 
@@ -455,10 +531,12 @@ public class BookingService {
     }
 
     private BookingDto toDto(Booking b, Property property) {
-        return toDto(b, property, paymentRepository.findByBookingIdOrderByPaidAtAsc(b.getId()));
+        boolean isAddonBearer = b.getBookingGroupId() == null
+                || isFirstInGroup(b, bookingRepository.findByBookingGroupIdOrderByIdAsc(b.getBookingGroupId()));
+        return toDto(b, property, paymentRepository.findByBookingIdOrderByPaidAtAsc(b.getId()), isAddonBearer);
     }
 
-    private BookingDto toDto(Booking b, Property property, List<Payment> payments) {
+    private BookingDto toDto(Booking b, Property property, List<Payment> payments, boolean isAddonBearer) {
         List<PaymentRecordDto> paymentDtos = payments.stream()
                 .map(p -> new PaymentRecordDto(p.getId(), p.getBookingId(), p.getAmount(), p.getMethod(), p.getReference(), p.getPaidAt()))
                 .toList();
@@ -469,7 +547,8 @@ public class BookingService {
                 b.getCheckIn(), b.getCheckOut(), b.getGuests(), b.getNotes(), b.getStatus(),
                 b.getBookingGroupId(), b.getCreatedAt(), b.getRoomNumber(), b.getAmount(), b.getPaymentStatus(), b.getPaymentMethod(),
                 b.getPaymentReference(), b.getAmountPaid(), paymentDtos, b.getChildrenCount(), b.getChildcareFee(),
-                b.isFullBoard(), b.getFullBoardFee(), b.getDiscountPercent(), b.getDiscountAmount());
+                b.isFullBoard(), b.getFullBoardFee(), b.getDiscountPercent(), b.getDiscountAmount(),
+                payableTotal(b, isAddonBearer));
     }
 
     @Transactional
@@ -497,7 +576,7 @@ public class BookingService {
      * (non-cancelled) bookings only - a completed or cancelled stay isn't actionable.
      */
     public TodayScheduleDto findTodaySchedule() {
-        LocalDate today = LocalDate.now();
+        LocalDate today = today();
         List<BookingDto> arrivals = enrich(bookingRepository.findArrivals(today, BookingStatus.CONFIRMED));
         List<BookingDto> departures = enrich(bookingRepository.findDepartures(today, BookingStatus.CHECKED_IN));
         return new TodayScheduleDto(arrivals, departures);

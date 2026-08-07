@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800">
+  <defs>
+    <linearGradient id="sky2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#BFD3C1"/>
+      <stop offset="100%" stop-color="#E7DFD3"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="800" fill="url(#sky2)"/>
+  <path d="M0 460 L140 300 L260 420 L400 260 L540 430 L660 320 L800 460 L800 800 L0 800 Z" fill="#6B705C" opacity="0.55"/>
+  <!-- window frame -->
+  <rect x="120" y="120" width="560" height="380" rx="10" fill="#FAF7F2" stroke="#2B2B29" stroke-width="10"/>
+  <rect x="150" y="150" width="500" height="320" fill="url(#sky2)"/>
+  <path d="M150 400 L280 270 L380 370 L500 240 L650 400 Z" fill="#4A3B2A" opacity="0.55"/>
+  <line x1="400" y1="150" x2="400" y2="470" stroke="#2B2B29" stroke-width="8"/>
+  <line x1="150" y1="310" x2="650" y2="310" stroke="#2B2B29" stroke-width="8"/>
+  <!-- desk -->
+  <rect x="120" y="560" width="560" height="24" rx="4" fill="#4A3B2A"/>
+  <rect x="150" y="584" width="18" height="120" fill="#2B2B29"/>
+  <rect x="630" y="584" width="18" height="120" fill="#2B2B29"/>
+  <!-- laptop -->
+  <rect x="330" y="500" width="140" height="60" rx="4" fill="#2B2B29"/>
+  <rect x="330" y="560" width="140" height="10" rx="2" fill="#2B2B29" opacity="0.8"/>
+  <!-- cup -->
+  <ellipse cx="560" cy="555" rx="18" ry="8" fill="#8B5E3C"/>
+  <rect x="542" y="530" width="36" height="26" rx="6" fill="#D8A15E"/>
+  <text x="400" y="770" text-anchor="middle" font-family="Georgia, serif" font-size="30" fill="#2B2B29">Why Every Room Has a Desk</text>
+</svg>

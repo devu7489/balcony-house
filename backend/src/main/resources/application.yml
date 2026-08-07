@@ -75,6 +75,10 @@ app:
   hotel:
     name: ${HOTEL_NAME:The Balcony House}
     tagline: ${HOTEL_TAGLINE:Stay a little longer.}
+    # The front desk's local day, not the server's - "today" for check-in/check-out gating
+    # and mid-stay proration must follow wall-clock time at the property, regardless of what
+    # timezone the container/host happens to run in (e.g. UTC in Docker by default).
+    timezone: ${HOTEL_TIMEZONE:Asia/Kolkata}
     branding:
       logo-url: ${HOTEL_LOGO_URL:}
       hero-image-url: ${HOTEL_HERO_IMAGE_URL:/images/hero/balcony-sunrise.png}
@@ -82,6 +86,20 @@ app:
       email: ${HOTEL_CONTACT_EMAIL:hello@thebalconyhouse.com}
       phone: ${HOTEL_CONTACT_PHONE:+91 00000 00000}
       address: ${HOTEL_ADDRESS:}
+    # GST on hotel accommodation in India is tiered by per-night room tariff, and the exact
+    # slabs have changed more than once (e.g. the July 2022 removal of the sub-Rs.1000
+    # exemption, then the September 2025 simplification to 5% without ITC for tariff up to
+    # Rs.7,500/night and 18% with ITC above that) - rather than hardcode a rate that can go
+    # stale, it's a plain config value the property owner (or their CA) sets and can update
+    # here at any time, with no code change. rate-percent is the ONLY figure invoices depend
+    # on; everything else here is just what gets printed on the invoice header.
+    gst:
+      enabled: ${HOTEL_GST_ENABLED:true}
+      gstin: ${HOTEL_GSTIN:}
+      legal-name: ${HOTEL_GST_LEGAL_NAME:}
+      state-name: ${HOTEL_GST_STATE_NAME:}
+      hsn-code: ${HOTEL_GST_HSN_CODE:9963}
+      rate-percent: ${HOTEL_GST_RATE_PERCENT:12}
     addons:
       childcare-enabled: ${HOTEL_CHILDCARE_ENABLED:true}
       full-board-enabled: ${HOTEL_FULL_BOARD_ENABLED:true}
@@ -131,6 +149,17 @@ app:
       long-stay-rate: ${CHILDCARE_LONG_STAY_RATE:400}     # per child/day, 11+ nights
     full-board:
       price-per-person-per-day: ${FULL_BOARD_RATE:500}
+
+  # Booking confirmation/cancellation emails via Resend's HTTP API (api.resend.com). Off by
+  # default so a fresh checkout of this repo never tries to call an API it has no key for.
+  # from-address must be on a domain verified with Resend, or Resend's shared sandbox address
+  # (onboarding@resend.dev) - the sandbox address only delivers to the Resend account's own
+  # verified email, never to arbitrary guest inboxes, so it's fine for testing the wiring but
+  # not for real guests until a real domain is verified.
+  email:
+    enabled: ${EMAIL_ENABLED:false}
+    resend-api-key: ${RESEND_API_KEY:}
+    from-address: ${EMAIL_FROM_ADDRESS:onboarding@resend.dev}
 
 logging:
   level:

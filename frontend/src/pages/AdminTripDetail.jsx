@@ -6,8 +6,7 @@ import StatusBadge from '../components/StatusBadge'
 import PaymentBadge from '../components/PaymentBadge'
 import Select from '../components/Select'
 import { roomNumberOptions } from '../lib/roomNumbers'
-
-const todayIso = () => new Date().toISOString().slice(0, 10)
+import { todayIso } from '../lib/dates'
 
 export default function AdminTripDetail() {
   const { groupId } = useParams()
@@ -141,6 +140,8 @@ export default function AdminTripDetail() {
   const anyConfirmed = bookings.some((b) => b.status === 'CONFIRMED')
   const anyCheckedIn = bookings.some((b) => b.status === 'CHECKED_IN')
   const missingRoomForCheckIn = bookings.some((b) => b.status === 'CONFIRMED' && !b.roomNumber)
+  const tooEarlyForCheckIn = bookings.some((b) => b.status === 'CONFIRMED' && todayIso() < b.checkIn)
+  const tooEarlyForCheckOut = bookings.some((b) => b.status === 'CHECKED_IN' && todayIso() < b.checkOut)
   const anyActive = anyConfirmed || anyCheckedIn
   const totalAmount = bookings.reduce((sum, b) => sum + Number(b.amount || 0), 0)
     + Number(first.childcareFee || 0)
@@ -196,6 +197,11 @@ export default function AdminTripDetail() {
             <div className="flex items-center gap-3">
               <span className="font-serif text-lg">₹{totalAmount.toLocaleString()}</span>
               {anyActive && <PaymentBadge status={paymentStatus} />}
+              {anyActive && paymentStatus === 'PAID' && (
+                <Link to={`/admin/invoice/trip/${groupId}`} className="text-sm text-olive hover:underline">
+                  View invoice
+                </Link>
+              )}
             </div>
             {first.childrenCount > 0 && (
               <p className="text-sm text-charcoal/60">
@@ -407,7 +413,7 @@ export default function AdminTripDetail() {
             <>
               <button
                 onClick={() => runAction('check-in')}
-                disabled={actionStatus === 'running' || missingRoomForCheckIn}
+                disabled={actionStatus === 'running' || missingRoomForCheckIn || tooEarlyForCheckIn}
                 className="px-6 py-2.5 rounded-full bg-olive text-warmwhite hover:bg-charcoal transition-colors disabled:opacity-50"
               >
                 Check-in trip
@@ -415,16 +421,24 @@ export default function AdminTripDetail() {
               {missingRoomForCheckIn && (
                 <p className="text-xs text-charcoal/50">Assign a room number to every room before checking in.</p>
               )}
+              {!missingRoomForCheckIn && tooEarlyForCheckIn && (
+                <p className="text-xs text-charcoal/50">Check-in opens on the scheduled arrival date.</p>
+              )}
             </>
           )}
           {anyCheckedIn && (
-            <button
-              onClick={() => runAction('check-out')}
-              disabled={actionStatus === 'running'}
-              className="px-6 py-2.5 rounded-full bg-olive text-warmwhite hover:bg-charcoal transition-colors disabled:opacity-50"
-            >
-              Check-out trip
-            </button>
+            <>
+              <button
+                onClick={() => runAction('check-out')}
+                disabled={actionStatus === 'running' || tooEarlyForCheckOut}
+                className="px-6 py-2.5 rounded-full bg-olive text-warmwhite hover:bg-charcoal transition-colors disabled:opacity-50"
+              >
+                Check-out trip
+              </button>
+              {tooEarlyForCheckOut && (
+                <p className="text-xs text-charcoal/50">Check-out opens on the scheduled departure date.</p>
+              )}
+            </>
           )}
           {anyActive && (
             <button

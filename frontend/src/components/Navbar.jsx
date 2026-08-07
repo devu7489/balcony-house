@@ -71,7 +71,7 @@ export default function Navbar() {
   const { hotelName } = useHotelConfig()
 
   return (
-    <header className="sticky top-0 z-40 bg-warmwhite/80 backdrop-blur-md border-b border-stone">
+    <header className="print:hidden sticky top-0 z-40 bg-warmwhite/80 backdrop-blur-md border-b border-stone">
       <div className="max-w-7xl mx-auto px-6 lg:px-10 h-20 flex items-center justify-between">
         <NavLink to="/" className="font-serif text-xl tracking-tight">
           {hotelName}

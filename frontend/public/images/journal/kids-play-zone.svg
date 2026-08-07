@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800">
+  <defs>
+    <linearGradient id="sky3" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F3E8D2"/>
+      <stop offset="100%" stop-color="#E7DFD3"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="800" fill="url(#sky3)"/>
+  <path d="M0 520 L160 360 L300 470 L420 320 L560 480 L700 380 L800 500 L800 800 L0 800 Z" fill="#6B705C" opacity="0.35"/>
+  <!-- balloons -->
+  <g>
+    <circle cx="220" cy="260" r="55" fill="#D8A15E"/>
+    <line x1="220" y1="315" x2="220" y2="420" stroke="#2B2B29" stroke-width="3"/>
+    <circle cx="360" cy="210" r="60" fill="#8B5E3C"/>
+    <line x1="360" y1="270" x2="360" y2="420" stroke="#2B2B29" stroke-width="3"/>
+    <circle cx="500" cy="255" r="50" fill="#6B705C"/>
+    <line x1="500" y1="305" x2="500" y2="420" stroke="#2B2B29" stroke-width="3"/>
+    <circle cx="620" cy="215" r="45" fill="#B7745A"/>
+    <line x1="620" y1="260" x2="620" y2="420" stroke="#2B2B29" stroke-width="3"/>
+  </g>
+  <!-- building blocks -->
+  <g>
+    <rect x="260" y="560" width="80" height="80" rx="8" fill="#D8A15E"/>
+    <rect x="350" y="600" width="70" height="70" rx="8" fill="#6B705C"/>
+    <rect x="430" y="550" width="90" height="90" rx="8" fill="#8B5E3C"/>
+    <rect x="300" y="490" width="60" height="60" rx="8" fill="#B7745A"/>
+  </g>
+  <text x="400" y="760" text-anchor="middle" font-family="Georgia, serif" font-size="28" fill="#2B2B29">Keeping Little Ones Busy</text>
+</svg>

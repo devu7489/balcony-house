@@ -15,6 +15,7 @@ public record HotelConfig(
         String tagline,
         Branding branding,
         Contact contact,
+        Gst gst,
         Addons addons,
         List<RoomCategory> rooms
 ) {
@@ -22,6 +23,10 @@ public record HotelConfig(
     public record Branding(String logoUrl, String heroImageUrl) {}
 
     public record Contact(String email, String phone, String address) {}
+
+    /** See this block's own comment in application.yml for why rate-percent is configurable
+     *  rather than hardcoded. */
+    public record Gst(boolean enabled, String gstin, String legalName, String stateName, String hsnCode, BigDecimal ratePercent) {}
 
     public record Addons(boolean childcareEnabled, boolean fullBoardEnabled) {}
 

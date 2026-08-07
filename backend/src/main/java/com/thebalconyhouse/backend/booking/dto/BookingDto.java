@@ -8,6 +8,14 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 
+/**
+ * payableTotal is what THIS booking is actually responsible for collecting - not simply
+ * amount + childcareFee + fullBoardFee - discountAmount. Childcare/Full Board fees are
+ * trip-wide totals denormalized onto every room in a multi-room trip (see Booking.java),
+ * so only the trip's first room (by id) carries them here; every other room's payableTotal
+ * is just its own amount minus its own discount. Always use this field (not childcareFee/
+ * fullBoardFee/amount added up client-side) to show or compare against what's owed.
+ */
 public record BookingDto(
         Long id,
         Long propertyId,
@@ -35,5 +43,6 @@ public record BookingDto(
         boolean fullBoard,
         BigDecimal fullBoardFee,
         int discountPercent,
-        BigDecimal discountAmount
+        BigDecimal discountAmount,
+        BigDecimal payableTotal
 ) {}

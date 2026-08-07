@@ -47,6 +47,9 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8081}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       ADMIN_EMAILS: ${ADMIN_EMAILS:-}
+      EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-onboarding@resend.dev}
 
   frontend:
     build:

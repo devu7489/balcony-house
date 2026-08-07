@@ -3,9 +3,9 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import apiClient from '../api/axiosClient'
 import { useAuth } from '../context/AuthContext'
 import Select from '../components/Select'
+import { todayIso } from '../lib/dates'
 
 const PHONE_PATTERN = /^[+]?[0-9 ()-]{7,20}$/
-const todayIso = () => new Date().toISOString().slice(0, 10)
 
 export default function CompleteProfile() {
   const { refresh } = useAuth()

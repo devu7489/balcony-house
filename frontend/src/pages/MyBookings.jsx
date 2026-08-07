@@ -124,6 +124,11 @@ export default function MyBookings() {
                       {!cancelled && <PaymentBadge status={b.paymentStatus} />}
                     </div>
                     <div className="flex items-center gap-4">
+                      {!cancelled && b.paymentStatus === 'PAID' && (
+                        <Link to={`/invoice/booking/${b.id}`} className="text-xs text-olive hover:underline">
+                          View invoice
+                        </Link>
+                      )}
                       {isCancellable(b.status) && (
                         <button
                           onClick={() => cancelBooking(b.id)}
@@ -171,6 +176,11 @@ export default function MyBookings() {
                     )}
                   </div>
                   <div className="flex items-center gap-4 sm:shrink-0">
+                    {!cancelled && paymentStatus === 'PAID' && (
+                      <Link to={`/invoice/trip/${entry.bookingGroupId}`} className="text-xs text-olive hover:underline">
+                        View invoice
+                      </Link>
+                    )}
                     {!cancelled && paymentStatus !== 'PAID' && (
                       <button
                         onClick={() => payTrip(entry.bookingGroupId)}

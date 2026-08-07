@@ -6,8 +6,7 @@ import StatusBadge from '../components/StatusBadge'
 import PaymentBadge from '../components/PaymentBadge'
 import Select from '../components/Select'
 import { roomNumberOptions } from '../lib/roomNumbers'
-
-const todayIso = () => new Date().toISOString().slice(0, 10)
+import { todayIso } from '../lib/dates'
 
 export default function AdminBookingDetail() {
   const { id } = useParams()
@@ -120,11 +119,19 @@ export default function AdminBookingDetail() {
   }
 
   const guestLine = [booking.guestName, booking.guestEmail, booking.guestPhone].filter(Boolean).join(' · ')
-  const fullTotal = booking.amount != null
-    ? Number(booking.amount) + Number(booking.childcareFee || 0) + Number(booking.fullBoardFee || 0) - Number(booking.discountAmount || 0)
-    : 0
+  // payableTotal comes from the backend, not a local recompute of amount + childcareFee +
+  // fullBoardFee - discountAmount: those addon fees are trip-wide and denormalized onto
+  // every room in a multi-room trip, so only one room in the trip actually owes them -
+  // recomputing locally double-counts them for every other room (see BookingDto's comment).
+  const fullTotal = booking.payableTotal != null ? Number(booking.payableTotal) : 0
   const amountPaidSoFar = Number(booking.amountPaid || 0)
   const balanceDue = fullTotal - amountPaidSoFar
+  // Trip-wide Kids Play Zone / Full Board fees only actually belong to one room's bill
+  // (whichever the backend picked as the addon bearer) - only show those "incl." lines
+  // when this room's own payableTotal is the one that includes them, so the line item
+  // and the headline total agree instead of contradicting each other.
+  const roomOnlyTotal = Number(booking.amount || 0) - Number(booking.discountAmount || 0)
+  const isAddonBearer = fullTotal > roomOnlyTotal
   const currentProperty = properties.find((p) => p.id === booking.propertyId)
   const roomNumbers = roomNumberOptions(currentProperty)
   const otherProperties = properties.filter((p) => p.id !== booking.propertyId)
@@ -203,24 +210,30 @@ export default function AdminBookingDetail() {
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <div className="flex items-center gap-3">
                   {booking.amount != null && (
-                    <span className="font-serif text-lg">
-                      ₹{(
-                        Number(booking.amount) + Number(booking.childcareFee || 0) + Number(booking.fullBoardFee || 0)
-                        - Number(booking.discountAmount || 0)
-                      ).toLocaleString()}
-                    </span>
+                    <span className="font-serif text-lg">₹{fullTotal.toLocaleString()}</span>
                   )}
                   <PaymentBadge status={booking.paymentStatus} />
+                  {booking.paymentStatus === 'PAID' && (
+                    <Link
+                      to={booking.bookingGroupId ? `/admin/invoice/trip/${booking.bookingGroupId}` : `/admin/invoice/booking/${booking.id}`}
+                      className="text-sm text-olive hover:underline"
+                    >
+                      View invoice
+                    </Link>
+                  )}
                 </div>
-                {booking.childrenCount > 0 && (
+                {isAddonBearer && booking.childrenCount > 0 && (
                   <p className="text-sm text-charcoal/60">
                     incl. Kids Play Zone &middot; {booking.childrenCount} child{booking.childrenCount === 1 ? '' : 'ren'} &middot; ₹{Number(booking.childcareFee).toLocaleString()}
                   </p>
                 )}
-                {booking.fullBoard && (
+                {isAddonBearer && booking.fullBoard && (
                   <p className="text-sm text-charcoal/60">
                     incl. Full Board &middot; ₹{Number(booking.fullBoardFee).toLocaleString()}
                   </p>
+                )}
+                {!isAddonBearer && (booking.childrenCount > 0 || booking.fullBoard) && (
+                  <p className="text-sm text-charcoal/60">Kids Play Zone / Full Board for this trip are billed to another room.</p>
                 )}
                 {booking.discountPercent > 0 && (
                   <p className="text-sm text-charcoal/60">
@@ -392,29 +405,43 @@ export default function AdminBookingDetail() {
 
           {!booking.bookingGroupId && (
             <div className="flex flex-wrap gap-3 items-center">
-              {booking.status === 'CONFIRMED' && (
-                <>
-                  <button
-                    onClick={() => runAction('check-in')}
-                    disabled={actionStatus === 'running' || !booking.roomNumber}
-                    className="px-6 py-2.5 rounded-full bg-olive text-warmwhite hover:bg-charcoal transition-colors disabled:opacity-50"
-                  >
-                    Check-in
-                  </button>
-                  {!booking.roomNumber && (
-                    <p className="text-xs text-charcoal/50">Assign a room number above before checking in.</p>
-                  )}
-                </>
-              )}
-              {booking.status === 'CHECKED_IN' && (
-                <button
-                  onClick={() => runAction('check-out')}
-                  disabled={actionStatus === 'running'}
-                  className="px-6 py-2.5 rounded-full bg-olive text-warmwhite hover:bg-charcoal transition-colors disabled:opacity-50"
-                >
-                  Check-out
-                </button>
-              )}
+              {booking.status === 'CONFIRMED' && (() => {
+                const tooEarly = todayIso() < booking.checkIn
+                return (
+                  <>
+                    <button
+                      onClick={() => runAction('check-in')}
+                      disabled={actionStatus === 'running' || !booking.roomNumber || tooEarly}
+                      className="px-6 py-2.5 rounded-full bg-olive text-warmwhite hover:bg-charcoal transition-colors disabled:opacity-50"
+                    >
+                      Check-in
+                    </button>
+                    {!booking.roomNumber && (
+                      <p className="text-xs text-charcoal/50">Assign a room number above before checking in.</p>
+                    )}
+                    {booking.roomNumber && tooEarly && (
+                      <p className="text-xs text-charcoal/50">Check-in opens on {booking.checkIn}.</p>
+                    )}
+                  </>
+                )
+              })()}
+              {booking.status === 'CHECKED_IN' && (() => {
+                const tooEarly = todayIso() < booking.checkOut
+                return (
+                  <>
+                    <button
+                      onClick={() => runAction('check-out')}
+                      disabled={actionStatus === 'running' || tooEarly}
+                      className="px-6 py-2.5 rounded-full bg-olive text-warmwhite hover:bg-charcoal transition-colors disabled:opacity-50"
+                    >
+                      Check-out
+                    </button>
+                    {tooEarly && (
+                      <p className="text-xs text-charcoal/50">Check-out opens on {booking.checkOut}.</p>
+                    )}
+                  </>
+                )
+              })()}
               {(booking.status === 'CONFIRMED' || booking.status === 'CHECKED_IN') && (
                 <button
                   onClick={() => window.confirm('Cancel this booking? This can\'t be undone.') && runAction('cancel')}

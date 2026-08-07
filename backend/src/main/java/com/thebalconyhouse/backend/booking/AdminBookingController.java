@@ -2,9 +2,11 @@ package com.thebalconyhouse.backend.booking;
 
 import com.thebalconyhouse.backend.booking.dto.AdminBookingRequest;
 import com.thebalconyhouse.backend.booking.dto.BookingDto;
+import com.thebalconyhouse.backend.booking.dto.InvoiceDto;
 import com.thebalconyhouse.backend.booking.dto.PaymentRequest;
 import com.thebalconyhouse.backend.booking.dto.RoomNumberRequest;
 import com.thebalconyhouse.backend.booking.dto.RoomUpgradeRequest;
+import com.thebalconyhouse.backend.notification.BookingEmailService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
@@ -19,8 +21,12 @@ import java.util.List;
 public class AdminBookingController {
 
     private final BookingService bookingService;
-    public AdminBookingController(BookingService bookingService) {
+    private final InvoiceService invoiceService;
+    private final BookingEmailService bookingEmailService;
+    public AdminBookingController(BookingService bookingService, InvoiceService invoiceService, BookingEmailService bookingEmailService) {
         this.bookingService = bookingService;
+        this.invoiceService = invoiceService;
+        this.bookingEmailService = bookingEmailService;
     }
 
     @GetMapping
@@ -35,7 +41,9 @@ public class AdminBookingController {
 
     @PostMapping
     public BookingDto create(@Valid @RequestBody AdminBookingRequest request) {
-        return bookingService.createForAdmin(request);
+        BookingDto dto = bookingService.createForAdmin(request);
+        bookingEmailService.sendConfirmation(List.of(dto));
+        return dto;
     }
 
     @PostMapping("/{id}/check-in")
@@ -50,7 +58,9 @@ public class AdminBookingController {
 
     @PostMapping("/{id}/cancel")
     public BookingDto cancel(@PathVariable Long id) {
-        return bookingService.cancel(id);
+        BookingDto dto = bookingService.cancel(id);
+        bookingEmailService.sendCancellation(List.of(dto));
+        return dto;
     }
 
     @PostMapping("/{id}/payment")
@@ -85,11 +95,23 @@ public class AdminBookingController {
 
     @PostMapping("/group/{groupId}/cancel")
     public List<BookingDto> cancelGroup(@PathVariable Long groupId) {
-        return bookingService.cancelGroup(groupId);
+        List<BookingDto> dtos = bookingService.cancelGroup(groupId);
+        bookingEmailService.sendCancellation(dtos);
+        return dtos;
     }
 
     @PostMapping("/group/{groupId}/payment")
     public List<BookingDto> recordGroupPayment(@PathVariable Long groupId, @Valid @RequestBody PaymentRequest request) {
         return bookingService.recordGroupPayment(groupId, request.amount(), request.method(), request.reference());
+    }
+
+    @GetMapping("/{id}/invoice")
+    public InvoiceDto invoice(@PathVariable Long id) {
+        return invoiceService.forBooking(id);
+    }
+
+    @GetMapping("/group/{groupId}/invoice")
+    public InvoiceDto groupInvoice(@PathVariable Long groupId) {
+        return invoiceService.forGroup(groupId);
     }
 }

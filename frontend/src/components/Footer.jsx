@@ -20,7 +20,7 @@ export default function Footer() {
   }
 
   return (
-    <footer className="bg-charcoal text-warmwhite mt-24">
+    <footer className="print:hidden bg-charcoal text-warmwhite mt-24">
       <div className="max-w-7xl mx-auto px-6 lg:px-10 py-16 grid gap-12 md:grid-cols-3">
         <div>
           <h3 className="font-serif text-2xl mb-2">{hotelName}</h3>

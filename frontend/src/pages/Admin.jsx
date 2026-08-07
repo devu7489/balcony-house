@@ -7,14 +7,8 @@ import PaymentBadge from '../components/PaymentBadge'
 import Select from '../components/Select'
 import { groupBookings } from '../lib/groupBookings'
 import { useHotelConfig } from '../context/HotelConfigContext'
+import { todayIso, nextDayIso, tomorrowIso } from '../lib/dates'
 
-const todayIso = () => new Date().toISOString().slice(0, 10)
-const nextDayIso = (dateStr) => {
-  const d = new Date(dateStr)
-  d.setDate(d.getDate() + 1)
-  return d.toISOString().slice(0, 10)
-}
-const tomorrowIso = () => nextDayIso(todayIso())
 const emptyForm = () => ({
   propertyId: '', guestName: '', guestPhone: '', guestEmail: '', checkIn: todayIso(), checkOut: tomorrowIso(), guests: 1, notes: '',
   paymentReceived: false, paymentMethod: 'Cash', paymentReference: '', childrenCount: 0,
