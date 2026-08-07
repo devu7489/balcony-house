@@ -2,14 +2,17 @@ import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import apiClient from '../api/axiosClient'
 import { useAuth } from '../context/AuthContext'
+import { useHotelConfig } from '../context/HotelConfigContext'
 import { getCart, setNotes as saveNotes, removeRoom, clearCart } from '../lib/cart'
 import PaymentBadge from '../components/PaymentBadge'
+import Select from '../components/Select'
 
 const roomTotal = (bookings) => bookings.reduce((sum, b) => sum + Number(b.amount || 0), 0)
 const tripTotal = (bookings) => roomTotal(bookings) + Number(bookings[0]?.childcareFee || 0) + Number(bookings[0]?.fullBoardFee || 0)
 
 export default function Checkout() {
   const { user, login } = useAuth()
+  const { childcareEnabled, fullBoardEnabled } = useHotelConfig()
   const location = useLocation()
 
   const [cart, setCartState] = useState(getCart())
@@ -29,8 +32,10 @@ export default function Checkout() {
   const nights = cart.checkIn && cart.checkOut
     ? Math.round((new Date(cart.checkOut) - new Date(cart.checkIn)) / 86400000)
     : 0
-  const totalGuests = cart.rooms.reduce((sum, r) => sum + r.guests, 0)
+  const totalRoomUnits = cart.rooms.reduce((sum, r) => sum + (r.quantity || 1), 0)
+  const totalGuests = cart.rooms.reduce((sum, r) => sum + r.guests * (r.quantity || 1), 0)
   const fullBoardTotal = fullBoardPricing.pricePerPersonPerDay * totalGuests * nights
+  const maxChildrenForTrip = Math.max(totalRoomUnits, 1) * childcarePricing.maxChildren
 
   useEffect(() => {
     if (nights <= 0) return
@@ -40,6 +45,10 @@ export default function Checkout() {
   useEffect(() => {
     apiClient.get('/addons/fullboard').then(({ data }) => setFullBoardPricing(data)).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    if (childrenCount > maxChildrenForTrip) setChildrenCount(maxChildrenForTrip)
+  }, [maxChildrenForTrip, childrenCount])
 
   useEffect(() => {
     if (cart.rooms.length === 0 || !cart.checkIn || !cart.checkOut) {
@@ -61,6 +70,10 @@ export default function Checkout() {
   }
 
   const hasUnavailableRoom = cart.rooms.some((r) => availability[r.propertyId]?.available === false)
+  const hasInsufficientUnits = cart.rooms.some((r) => {
+    const avail = availability[r.propertyId]
+    return avail?.available && (r.quantity || 1) > avail.unitsLeft
+  })
 
   const submit = async (e) => {
     e.preventDefault()
@@ -77,7 +90,9 @@ export default function Checkout() {
         checkIn: cart.checkIn,
         checkOut: cart.checkOut,
         notes: notes || null,
-        rooms: cart.rooms.map((r) => ({ propertyId: r.propertyId, guests: r.guests })),
+        rooms: cart.rooms.flatMap((r) =>
+          Array.from({ length: r.quantity || 1 }, () => ({ propertyId: r.propertyId, guests: r.guests }))
+        ),
         childrenCount,
         fullBoard,
       })
@@ -86,7 +101,9 @@ export default function Checkout() {
       setSubmitStatus('payment')
     } catch (err) {
       setSubmitStatus('error')
-      setSubmitError(err.response?.data?.message || 'Something went wrong, please try again.')
+      const data = err.response?.data
+      const details = data?.details?.length ? `: ${data.details.join(', ')}` : ''
+      setSubmitError((data?.message || 'Something went wrong, please try again.') + details)
     }
   }
 
@@ -214,19 +231,24 @@ export default function Checkout() {
         {cart.rooms.map((r) => {
           const avail = availability[r.propertyId]
           const unavailable = avail?.available === false
+          const quantity = r.quantity || 1
+          const insufficientUnits = avail?.available && quantity > avail.unitsLeft
           return (
-            <div key={r.propertyId} className={`bg-white border rounded-xl2 p-4 ${unavailable ? 'border-red-300' : 'border-stone'}`}>
+            <div key={r.propertyId} className={`bg-white border rounded-xl2 p-4 ${unavailable || insufficientUnits ? 'border-red-300' : 'border-stone'}`}>
               <div className="flex gap-4 items-center">
                 <div
                   className="w-20 h-20 rounded-lg bg-stone bg-cover bg-center shrink-0"
                   style={{ backgroundImage: r.propertyHeroImageUrl ? `url(${r.propertyHeroImageUrl})` : undefined }}
                 />
                 <div className="flex-1">
-                  <h2 className="font-serif text-lg">{r.propertyName}</h2>
-                  <p className="text-charcoal/60 text-sm">{r.guests} guest{r.guests === 1 ? '' : 's'}</p>
+                  <h2 className="font-serif text-lg">
+                    {r.propertyName}{quantity > 1 ? <span className="text-charcoal/50 font-sans text-sm"> &times; {quantity}</span> : null}
+                  </h2>
+                  <p className="text-charcoal/60 text-sm">{r.guests} adult{r.guests === 1 ? '' : 's'}{quantity > 1 ? ' each' : ''}</p>
                   {avail?.pricePerNight != null && nights > 0 && (
                     <p className="text-charcoal/50 text-xs mt-0.5">
-                      ₹{avail.pricePerNight.toLocaleString()}/night × {nights} night{nights === 1 ? '' : 's'} = ₹{(avail.pricePerNight * nights).toLocaleString()}
+                      ₹{avail.pricePerNight.toLocaleString()}/night × {nights} night{nights === 1 ? '' : 's'}
+                      {quantity > 1 ? ` × ${quantity} rooms` : ''} = ₹{(avail.pricePerNight * nights * quantity).toLocaleString()}
                     </p>
                   )}
                 </div>
@@ -239,30 +261,32 @@ export default function Checkout() {
                   This room became fully booked for these dates — remove it or pick different dates.
                 </p>
               )}
+              {!unavailable && insufficientUnits && (
+                <p className="text-xs text-red-600 mt-3">
+                  Only {avail.unitsLeft} left for these dates — lower the room count or pick different dates.
+                </p>
+              )}
             </div>
           )
         })}
       </div>
 
+      {childcareEnabled && (
       <div className="bg-white border border-stone rounded-xl2 p-6 mb-6">
         <h2 className="font-serif text-lg mb-1">Kids Play Zone <span className="text-charcoal/40 text-sm font-sans">(optional)</span></h2>
         <p className="text-charcoal/60 text-sm mb-4">
-          Supervised on-site play zone, priced per day per child — ₹{childcarePricing.perDayRate}/day for this {nights}-night stay.
+          Supervised on-site play zone for kids under 12, priced per day per child — ₹{childcarePricing.perDayRate}/day for this {nights}-night stay.
         </p>
-        <div className="flex items-center gap-2">
-          {Array.from({ length: childcarePricing.maxChildren + 1 }, (_, n) => n).map((n) => (
-            <button
-              key={n}
-              type="button"
-              onClick={() => setChildrenCount(n)}
-              className={`px-4 py-2 rounded-full text-sm border transition-colors ${
-                childrenCount === n ? 'bg-olive text-warmwhite border-olive' : 'border-stone text-charcoal/70 hover:border-olive'
-              }`}
-            >
-              {n === 0 ? 'None' : `${n} child${n === 1 ? '' : 'ren'}`}
-            </button>
+        <Select
+          value={childrenCount}
+          onChange={(e) => setChildrenCount(Number(e.target.value))}
+          className="w-40 px-4 py-2 text-sm"
+        >
+          {Array.from({ length: maxChildrenForTrip + 1 }, (_, n) => n).map((n) => (
+            <option key={n} value={n}>{n === 0 ? 'None' : `${n} child${n === 1 ? '' : 'ren'}`}</option>
           ))}
-        </div>
+        </Select>
+        <p className="text-xs text-charcoal/40 mt-2">Up to {childcarePricing.maxChildren} per room ({totalRoomUnits} room{totalRoomUnits === 1 ? '' : 's'} in this trip).</p>
         {childrenCount > 0 && (
           <p className="text-sm text-olive mt-3">
             + ₹{(childcarePricing.totalPerChild * childrenCount).toLocaleString()} for {childrenCount} child{childrenCount === 1 ? '' : 'ren'}
@@ -270,11 +294,13 @@ export default function Checkout() {
           </p>
         )}
       </div>
+      )}
 
+      {fullBoardEnabled && (
       <div className="bg-white border border-stone rounded-xl2 p-6 mb-6">
         <h2 className="font-serif text-lg mb-1">Full Board <span className="text-charcoal/40 text-sm font-sans">(optional)</span></h2>
         <p className="text-charcoal/60 text-sm mb-4">
-          Breakfast, buffet lunch, and dinner for everyone on the trip — ₹{fullBoardPricing.pricePerPersonPerDay}/person/day.
+          Buffet lunch and dinner for all adults on the trip — ₹{fullBoardPricing.pricePerPersonPerDay}/person/day. Kids under 12 eat free.
         </p>
         <div className="flex items-center gap-2">
           <button
@@ -298,11 +324,12 @@ export default function Checkout() {
         </div>
         {fullBoard && (
           <p className="text-sm text-olive mt-3">
-            + ₹{fullBoardTotal.toLocaleString()} for {totalGuests} guest{totalGuests === 1 ? '' : 's'}
+            + ₹{fullBoardTotal.toLocaleString()} for {totalGuests} adult{totalGuests === 1 ? '' : 's'}
             {' '}(₹{fullBoardPricing.pricePerPersonPerDay}/person/day × {nights} night{nights === 1 ? '' : 's'})
           </p>
         )}
       </div>
+      )}
 
       <form onSubmit={submit} className="bg-white border border-stone rounded-xl2 p-6 space-y-4">
         <label className="block text-sm text-charcoal/70">
@@ -327,13 +354,18 @@ export default function Checkout() {
         )}
 
         {checkingAvailability && <p className="text-sm text-charcoal/50">Confirming availability…</p>}
+        {!checkingAvailability && hasInsufficientUnits && !hasUnavailableRoom && (
+          <p className="text-sm text-red-600">
+            One or more rooms don't have enough units left for the number you've selected — lower the room count or pick different dates.
+          </p>
+        )}
 
         <button
           type="submit"
-          disabled={submitStatus === 'submitting' || checkingAvailability || hasUnavailableRoom || (user && !user.phone)}
+          disabled={submitStatus === 'submitting' || checkingAvailability || hasUnavailableRoom || hasInsufficientUnits || (user && !user.phone)}
           className="w-full px-7 py-3 rounded-full bg-olive text-warmwhite hover:bg-charcoal transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {submitStatus === 'submitting' ? 'Booking…' : user ? `Book all ${cart.rooms.length} room${cart.rooms.length === 1 ? '' : 's'}` : 'Sign in to book'}
+          {submitStatus === 'submitting' ? 'Booking…' : user ? `Book all ${totalRoomUnits} room${totalRoomUnits === 1 ? '' : 's'}` : 'Sign in to book'}
         </button>
 
         {submitStatus === 'error' && <p className="text-red-600 text-sm">{submitError}</p>}

@@ -13,6 +13,12 @@ public class Property {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    // Stable identifier used to match this row to a room category in app.hotel.rooms
+    // config across restarts/renames. Left nullable at the DB level (no unique/not-null
+    // constraint) so adding it to a table with existing rows never breaks schema update -
+    // HotelSeeder backfills it on every startup by matching legacy rows on name first.
+    private String slug;
+
     @Column(nullable = false)
     private String name;
 
@@ -35,11 +41,12 @@ public class Property {
     @Column(name = "highlight")
     private List<String> highlights = new ArrayList<>();
 
-    protected Property() {}
+    public Property() {}
 
-    public Property(String name, String description, BigDecimal pricePerNight, int maxGuests,
+    public Property(String slug, String name, String description, BigDecimal pricePerNight, int maxGuests,
                      boolean privateBalcony, boolean workspaceAvailable, String heroImageUrl,
                      int totalUnits, List<String> highlights) {
+        this.slug = slug;
         this.name = name;
         this.description = description;
         this.pricePerNight = pricePerNight;
@@ -51,7 +58,29 @@ public class Property {
         this.highlights = highlights;
     }
 
+    // Applies room-category config on top of this row - used by HotelSeeder to keep
+    // existing rows in sync with app.hotel.rooms on every startup. Mutates the highlights
+    // collection in place (clear+addAll) rather than reassigning it, since on a
+    // Hibernate-managed entity replacing an @ElementCollection field's reference outright
+    // loses dirty-tracking on that collection.
+    public void applyConfig(String slug, String name, String description, BigDecimal pricePerNight, int maxGuests,
+                             boolean privateBalcony, boolean workspaceAvailable, String heroImageUrl,
+                             int totalUnits, List<String> highlights) {
+        this.slug = slug;
+        this.name = name;
+        this.description = description;
+        this.pricePerNight = pricePerNight;
+        this.maxGuests = maxGuests;
+        this.privateBalcony = privateBalcony;
+        this.workspaceAvailable = workspaceAvailable;
+        this.heroImageUrl = heroImageUrl;
+        this.totalUnits = totalUnits;
+        this.highlights.clear();
+        this.highlights.addAll(highlights);
+    }
+
     public Long getId() { return id; }
+    public String getSlug() { return slug; }
     public String getName() { return name; }
     public String getDescription() { return description; }
     public BigDecimal getPricePerNight() { return pricePerNight; }

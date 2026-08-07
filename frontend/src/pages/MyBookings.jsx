@@ -5,6 +5,7 @@ import LoadingScreen from '../components/LoadingScreen'
 import StatusBadge from '../components/StatusBadge'
 import PaymentBadge from '../components/PaymentBadge'
 import { groupBookings } from '../lib/groupBookings'
+import Select from '../components/Select'
 
 const isCancellable = (status) => status === 'CONFIRMED' || status === 'CHECKED_IN'
 const totalAmount = (bookings) =>
@@ -33,6 +34,7 @@ export default function MyBookings() {
   const [bookings, setBookings] = useState([])
   const [loading, setLoading] = useState(true)
   const [cancellingKey, setCancellingKey] = useState(null)
+  const [sortBy, setSortBy] = useState('bookingTime')
 
   const load = () => apiClient.get('/bookings/mine').then(({ data }) => setBookings(data))
 
@@ -41,6 +43,7 @@ export default function MyBookings() {
   }, [])
 
   const cancelBooking = async (id) => {
+    if (!window.confirm('Cancel this booking? This can\'t be undone.')) return
     setCancellingKey(id)
     try {
       await apiClient.post(`/bookings/${id}/cancel`)
@@ -51,6 +54,7 @@ export default function MyBookings() {
   }
 
   const cancelTrip = async (groupId) => {
+    if (!window.confirm('Cancel this whole trip? This can\'t be undone.')) return
     setCancellingKey(groupId)
     try {
       await apiClient.post(`/bookings/group/${groupId}/cancel`)
@@ -73,11 +77,26 @@ export default function MyBookings() {
 
   if (loading) return <LoadingScreen label="Gathering your bookings" />
 
-  const entries = groupBookings(bookings)
+  const sortedBookings = sortBy === 'checkIn'
+    ? [...bookings].sort((a, b) => a.checkIn.localeCompare(b.checkIn))
+    : [...bookings].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+  const entries = groupBookings(sortedBookings)
 
   return (
     <div className="max-w-3xl mx-auto px-6 lg:px-10 py-20">
-      <h1 className="font-serif text-4xl mb-12">Your bookings</h1>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-12">
+        <h1 className="font-serif text-4xl">Your bookings</h1>
+        {bookings.length > 1 && (
+          <Select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="sm:w-56 px-4 py-2 text-sm"
+          >
+            <option value="bookingTime">Sort: Booking time (newest)</option>
+            <option value="checkIn">Sort: Check-in date</option>
+          </Select>
+        )}
+      </div>
 
       {bookings.length === 0 ? (
         <div>
@@ -122,14 +141,21 @@ export default function MyBookings() {
 
             const anyCancellable = entry.bookings.some((b) => isCancellable(b.status))
             const cancelled = entry.bookings.every((b) => b.status === 'CANCELLED')
-            const paymentStatus = entry.bookings[0].paymentStatus
+            // A room change can reset just one room in the trip back to PENDING while the
+            // others stay PAID, so the trip is only truly settled if every active room is.
+            const paymentStatus = entry.bookings
+              .filter((b) => b.status !== 'CANCELLED')
+              .every((b) => b.paymentStatus === 'PAID') ? 'PAID' : 'PENDING'
             const total = totalAmount(entry.bookings)
             return (
               <div key={entry.bookingGroupId} className="bg-white border border-stone rounded-xl2 p-4">
-                <div className="flex items-start justify-between gap-4 mb-3">
-                  <div>
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4 mb-3">
+                  <div className="min-w-0">
                     <p className="text-xs uppercase tracking-wide text-charcoal/50 mb-1">
-                      Trip &middot; {entry.bookings.length} rooms &middot; {entry.bookings[0].checkIn} &rarr; {entry.bookings[0].checkOut}
+                      Trip &middot; {entry.bookings.length} rooms
+                      <span className="hidden sm:inline"> &middot; </span>
+                      <br className="sm:hidden" />
+                      {entry.bookings[0].checkIn} &rarr; {entry.bookings[0].checkOut}
                     </p>
                     <div className="flex items-center gap-2">
                       <span className="text-sm text-charcoal/70">₹{total.toLocaleString()}</span>
@@ -144,7 +170,7 @@ export default function MyBookings() {
                       <p className="text-xs text-charcoal/50 mt-1">incl. Full Board</p>
                     )}
                   </div>
-                  <div className="flex items-center gap-4 shrink-0">
+                  <div className="flex items-center gap-4 sm:shrink-0">
                     {!cancelled && paymentStatus !== 'PAID' && (
                       <button
                         onClick={() => payTrip(entry.bookingGroupId)}

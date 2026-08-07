@@ -1,30 +1,32 @@
 import { Link } from 'react-router-dom'
+import { useHotelConfig } from '../context/HotelConfigContext'
 
 export default function Home() {
+  const { hotelName, tagline, heroImageUrl } = useHotelConfig()
   return (
     <div>
       <section className="px-4 md:px-8 pt-4 md:pt-6">
-        <div className="relative w-full aspect-[3/2] max-h-[85vh] min-h-[420px] rounded-xl2 overflow-hidden flex items-end">
+        <div className="relative w-full aspect-[3/2] max-h-[85vh] min-h-[480px] rounded-xl2 overflow-hidden flex items-end">
           <div
             className="absolute inset-0 bg-cover bg-center"
-            style={{ backgroundImage: "url(/images/hero/balcony-sunrise.png)" }}
+            style={{ backgroundImage: `url(${heroImageUrl})` }}
           />
           <div className="absolute inset-0 bg-gradient-to-b from-charcoal/15 via-charcoal/5 to-charcoal/65" />
-          <div className="relative max-w-7xl mx-auto px-6 lg:px-10 pb-12 md:pb-16 w-full text-warmwhite">
+          <div className="relative max-w-7xl mx-auto px-6 lg:px-10 pb-8 md:pb-16 w-full text-warmwhite">
             <h1
-              className="text-5xl md:text-7xl leading-[1.05] text-balance mb-6 max-w-2xl"
+              className="text-3xl sm:text-5xl md:text-7xl leading-[1.1] sm:leading-[1.05] text-balance mb-3 sm:mb-6 max-w-2xl"
               style={{ textShadow: '0 4px 24px rgba(0,0,0,0.35)' }}
             >
-              Stay a little longer.
+              {tagline}
             </h1>
-            <p className="max-w-xl text-warmwhite/90 mb-8 text-lg" style={{ textShadow: '0 2px 12px rgba(0,0,0,0.3)' }}>
+            <p className="max-w-xl text-warmwhite/90 mb-5 sm:mb-8 text-sm sm:text-lg" style={{ textShadow: '0 2px 12px rgba(0,0,0,0.3)' }}>
               Thoughtfully designed mountain stays where every balcony becomes your favorite place to pause, reconnect, and create memories.
             </p>
-            <div className="flex flex-wrap gap-4">
-              <Link to="/stay" className="px-7 py-3 rounded-full bg-warmwhite text-charcoal font-medium hover:bg-stone transition-colors">
+            <div className="flex flex-wrap gap-3 sm:gap-4">
+              <Link to="/stay" className="px-5 py-2.5 sm:px-7 sm:py-3 rounded-full bg-warmwhite text-charcoal font-medium hover:bg-stone transition-colors text-sm sm:text-base">
                 Book Your Stay
               </Link>
-              <Link to="/experiences" className="px-7 py-3 rounded-full border border-warmwhite/70 font-medium hover:bg-warmwhite/10 transition-colors">
+              <Link to="/experiences" className="px-5 py-2.5 sm:px-7 sm:py-3 rounded-full border border-warmwhite/70 font-medium hover:bg-warmwhite/10 transition-colors text-sm sm:text-base">
                 Explore the Experience
               </Link>
             </div>
@@ -68,7 +70,7 @@ export default function Home() {
         <h2 className="text-3xl md:text-4xl mb-6 text-balance">Life moves fast. Mountain mornings shouldn't.</h2>
         <p className="text-charcoal/70 leading-relaxed">
           Slow mornings. Balcony coffee. Working with mountain views. Bonfire evenings.
-          Meaningful conversations. Nature. Rest. We built The Balcony House around the
+          Meaningful conversations. Nature. Rest. We built {hotelName} around the
           idea that a holiday should feel like an exhale, not another item on the list.
         </p>
       </section>

@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 import apiClient from '../api/axiosClient'
 import LoadingScreen from '../components/LoadingScreen'
 
@@ -16,14 +15,8 @@ export default function AdminSubscribers() {
   if (loading) return <LoadingScreen label="Loading subscribers" />
 
   return (
-    <div className="max-w-3xl mx-auto px-6 lg:px-10 py-20">
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="font-serif text-4xl">Admin — Journal Subscribers</h1>
-        <div className="flex items-center gap-4">
-          <Link to="/admin" className="text-sm text-olive hover:underline">Bookings &rarr;</Link>
-          <Link to="/admin/messages" className="text-sm text-olive hover:underline">Messages &rarr;</Link>
-        </div>
-      </div>
+    <div>
+      <h1 className="font-serif text-3xl sm:text-4xl mb-4">Journal Subscribers</h1>
       <p className="text-charcoal/60 text-sm mb-12">
         {subscribers.length} subscriber{subscribers.length === 1 ? '' : 's'} — captured from the footer sign-up. Nothing is emailed automatically.
       </p>

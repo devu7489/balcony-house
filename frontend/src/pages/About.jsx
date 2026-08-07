@@ -1,3 +1,5 @@
+import { useHotelConfig } from '../context/HotelConfigContext'
+
 const highlights = [
   'Cozy, thoughtfully designed spaces inspired by mountain living.',
   "Panoramic balcony views you'll never tire of.",
@@ -9,11 +11,12 @@ const highlights = [
 ]
 
 export default function About() {
+  const { hotelName, tagline } = useHotelConfig()
   return (
     <div>
       <section className="max-w-3xl mx-auto px-6 pt-24 pb-16 text-center">
-        <p className="text-sm uppercase tracking-[0.2em] text-olive mb-4">About The Balcony House</p>
-        <h1 className="font-serif text-4xl md:text-5xl mb-6 text-balance">Stay a little longer.</h1>
+        <p className="text-sm uppercase tracking-[0.2em] text-olive mb-4">About {hotelName}</p>
+        <h1 className="font-serif text-4xl md:text-5xl mb-6 text-balance">{tagline}</h1>
         <p className="text-charcoal/80 text-lg leading-relaxed font-serif italic">
           Some places are meant to be visited. Others are meant to be felt.
         </p>
@@ -21,7 +24,7 @@ export default function About() {
 
       <section className="max-w-3xl mx-auto px-6 pb-20 space-y-6 text-charcoal/80 leading-relaxed">
         <p>
-          The Balcony House was born from a simple idea: to create a place where time slows down,
+          {hotelName} was born from a simple idea: to create a place where time slows down,
           mornings begin with mountain views, and every balcony invites you to pause a little longer.
         </p>
         <p>
@@ -43,7 +46,7 @@ export default function About() {
             <h2 className="font-serif text-3xl mb-4 text-balance">More than a stay</h2>
             <p className="text-charcoal/70 max-w-xl mx-auto">
               We believe hospitality isn't measured by luxury alone—it's measured by how a place makes
-              you feel. At The Balcony House, you'll discover:
+              you feel. At {hotelName}, you'll discover:
             </p>
           </div>
           <ul className="grid sm:grid-cols-2 gap-x-8 gap-y-5 max-w-2xl mx-auto">
@@ -77,7 +80,7 @@ export default function About() {
           feeling lighter, calmer, and already planning your next visit.
         </p>
         <p className="text-charcoal/60 mb-8">Until then…</p>
-        <p className="font-serif text-2xl">Stay a little longer.</p>
+        <p className="font-serif text-2xl">{tagline}</p>
       </section>
     </div>
   )

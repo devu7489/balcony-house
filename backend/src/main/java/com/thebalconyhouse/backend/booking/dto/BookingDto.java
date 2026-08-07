@@ -4,7 +4,9 @@ import com.thebalconyhouse.backend.booking.BookingStatus;
 import com.thebalconyhouse.backend.booking.PaymentStatus;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 
 public record BookingDto(
         Long id,
@@ -20,10 +22,14 @@ public record BookingDto(
         String notes,
         BookingStatus status,
         Long bookingGroupId,
+        Instant createdAt,
+        String roomNumber,
         BigDecimal amount,
         PaymentStatus paymentStatus,
         String paymentMethod,
         String paymentReference,
+        BigDecimal amountPaid,
+        List<PaymentRecordDto> payments,
         int childrenCount,
         BigDecimal childcareFee,
         boolean fullBoard,

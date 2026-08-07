@@ -69,7 +69,55 @@ app:
     allowed-origins: ${CORS_ORIGINS:http://localhost:5173}
   admin-emails: ${ADMIN_EMAILS:}
 
-  # Base rates live per-property in the database (they genuinely differ per room);
+  # Everything that makes this deployment "this" hotel rather than another one. Re-skinning
+  # the app for a new client is meant to start and end with editing this block (and swapping
+  # the image files it points at) - see HotelConfig/HotelSeeder for how it's applied.
+  hotel:
+    name: ${HOTEL_NAME:The Balcony House}
+    tagline: ${HOTEL_TAGLINE:Stay a little longer.}
+    branding:
+      logo-url: ${HOTEL_LOGO_URL:}
+      hero-image-url: ${HOTEL_HERO_IMAGE_URL:/images/hero/balcony-sunrise.png}
+    contact:
+      email: ${HOTEL_CONTACT_EMAIL:hello@thebalconyhouse.com}
+      phone: ${HOTEL_CONTACT_PHONE:+91 00000 00000}
+      address: ${HOTEL_ADDRESS:}
+    addons:
+      childcare-enabled: ${HOTEL_CHILDCARE_ENABLED:true}
+      full-board-enabled: ${HOTEL_FULL_BOARD_ENABLED:true}
+    rooms:
+      - slug: sunrise-room
+        name: The Sunrise Room
+        description: A warm, sunlit room with an oversized private balcony facing the eastern ridge. Perfect for slow mornings and mountain coffee.
+        price-per-night: 3000.00
+        max-guests: 2
+        private-balcony: true
+        workspace-available: true
+        hero-image-url: /images/rooms/sunrise-room.svg
+        total-units: 4
+        highlights: []
+      - slug: pinewood-suite
+        name: The Pinewood Suite
+        description: Spacious suite with wood interiors, a reading nook, and views over the pine valley below.
+        price-per-night: 3500.00
+        max-guests: 3
+        private-balcony: true
+        workspace-available: true
+        hero-image-url: /images/rooms/pinewood-suite.svg
+        total-units: 4
+        highlights: []
+      - slug: mist-cottage
+        name: The Mist Cottage
+        description: A standalone cottage tucked against the tree line, quiet and private, with a fireplace for cool evenings.
+        price-per-night: 4000.00
+        max-guests: 4
+        private-balcony: true
+        workspace-available: false
+        hero-image-url: /images/rooms/mist-cottage.svg
+        total-units: 4
+        highlights: []
+
+  # Base rates live per-property (they genuinely differ per room, see app.hotel.rooms above);
   # everything here is the shared, tunable math applied on top of those bases.
   pricing:
     room:

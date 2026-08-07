@@ -8,9 +8,11 @@ import java.math.BigDecimal;
 @Component
 public class ChildcarePricing {
 
-    // Not YAML-configurable: Bean Validation's @Max needs a compile-time literal
-    // (see BookingGroupRequest/AdminBookingRequest childrenCount).
-    public static final int MAX_CHILDREN = 2;
+    // Max free kids (under 12) per room. Not YAML-configurable: Bean Validation's @Max
+    // needs a compile-time literal (see AdminBookingRequest.childrenCount, which books a
+    // single room so this cap applies directly; BookingGroupRequest.childrenCount can cover
+    // multiple rooms, so BookingService multiplies this by the room count instead).
+    public static final int MAX_CHILDREN_PER_ROOM = 2;
 
     private final BigDecimal shortStayRate;
     private final BigDecimal midStayRate;

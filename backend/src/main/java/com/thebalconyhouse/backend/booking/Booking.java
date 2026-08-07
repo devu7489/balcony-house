@@ -24,6 +24,12 @@ public class Booking {
 
     private Long bookingGroupId;
 
+    // Free-text physical room label (e.g. "S-2") staff assign at/around check-in for their
+    // own tracking - deliberately not a first-class RoomUnit entity with its own availability
+    // engine, since availability is still computed per room *category* (Property.totalUnits),
+    // not per physical unit. Nullable, no default, purely informational.
+    private String roomNumber;
+
     @Enumerated(EnumType.STRING)
     private BookingStatus status = BookingStatus.CONFIRMED;
 
@@ -36,6 +42,13 @@ public class Booking {
 
     @Column(length = 500)
     private String paymentReference;
+
+    // How much has actually been collected so far, as of the last time payment was
+    // recorded. Kept separate from `amount` (the current total owed) and deliberately
+    // NOT reset when a room change moves paymentStatus back to PENDING, so the front
+    // desk can always see "already paid X, balance due Y" instead of that history
+    // disappearing. Nullable (existing rows predate this column) - use getAmountPaid().
+    private BigDecimal amountPaid;
 
     private int childrenCount = 0;
 
@@ -66,6 +79,7 @@ public class Booking {
 
     public Long getId() { return id; }
     public Long getPropertyId() { return propertyId; }
+    public void setPropertyId(Long propertyId) { this.propertyId = propertyId; }
     public String getGuestEmail() { return guestEmail; }
     public String getGuestName() { return guestName; }
     public String getGuestPhone() { return guestPhone; }
@@ -78,21 +92,39 @@ public class Booking {
     public void setStatus(BookingStatus status) { this.status = status; }
     public Long getBookingGroupId() { return bookingGroupId; }
     public void setBookingGroupId(Long bookingGroupId) { this.bookingGroupId = bookingGroupId; }
+    public String getRoomNumber() { return roomNumber; }
+    public void setRoomNumber(String roomNumber) { this.roomNumber = roomNumber; }
     public BigDecimal getAmount() { return amount; }
     public void setAmount(BigDecimal amount) { this.amount = amount; }
     public PaymentStatus getPaymentStatus() { return paymentStatus; }
     public String getPaymentMethod() { return paymentMethod; }
     public String getPaymentReference() { return paymentReference; }
-    public void markPaid(String paymentMethod, String paymentReference) {
-        this.paymentStatus = PaymentStatus.PAID;
-        this.paymentMethod = paymentMethod;
-        this.paymentReference = paymentReference;
+    public BigDecimal getAmountPaid() { return amountPaid != null ? amountPaid : BigDecimal.ZERO; }
+
+    /** Room + childcare + full board, minus any discount - what the guest actually owes in total. */
+    public BigDecimal getFullTotal() {
+        return amount.add(childcareFee).add(fullBoardFee).subtract(discountAmount);
     }
+
+    /**
+     * Sets the raw status/method/reference fields only - does NOT touch amountPaid or
+     * create a Payment record. Used for the initial CONFIRMED/PENDING state at booking
+     * creation; BookingService.recordPaymentInternal is the only place that actually
+     * records money received (creates the itemized Payment row this all now depends on).
+     */
     public void setInitialPayment(PaymentStatus paymentStatus, String paymentMethod, String paymentReference) {
         this.paymentStatus = paymentStatus;
         this.paymentMethod = paymentMethod;
         this.paymentReference = paymentReference;
     }
+    /** Flips payment status without touching amountPaid/method/reference - used when a room
+     *  change invalidates a PAID mark, so the previously collected amount stays visible. */
+    public void setPaymentStatus(PaymentStatus paymentStatus) {
+        this.paymentStatus = paymentStatus;
+    }
+    public void setAmountPaid(BigDecimal amountPaid) { this.amountPaid = amountPaid; }
+    public void setPaymentMethod(String paymentMethod) { this.paymentMethod = paymentMethod; }
+    public void setPaymentReference(String paymentReference) { this.paymentReference = paymentReference; }
     public int getChildrenCount() { return childrenCount; }
     public BigDecimal getChildcareFee() { return childcareFee; }
     public void setChildcare(int childrenCount, BigDecimal childcareFee) {

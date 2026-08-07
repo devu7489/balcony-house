@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import apiClient from '../api/axiosClient'
 import { useAuth } from '../context/AuthContext'
+import Select from '../components/Select'
 
 const PHONE_PATTERN = /^[+]?[0-9 ()-]{7,20}$/
 const todayIso = () => new Date().toISOString().slice(0, 10)
@@ -64,17 +65,17 @@ export default function CompleteProfile() {
           className="w-full border border-stone rounded-lg px-4 py-3 focus:outline-none focus:border-olive"
         />
 
-        <select
+        <Select
           value={form.gender}
           onChange={(e) => setForm({ ...form, gender: e.target.value })}
-          className="w-full border border-stone rounded-lg px-4 py-3 focus:outline-none focus:border-olive bg-white"
+          className="px-4 py-3"
         >
           <option value="">Gender (optional)</option>
           <option value="FEMALE">Female</option>
           <option value="MALE">Male</option>
           <option value="OTHER">Other</option>
           <option value="PREFER_NOT_TO_SAY">Prefer not to say</option>
-        </select>
+        </Select>
 
         <label className="block text-sm text-charcoal/70">
           Date of birth <span className="text-charcoal/40">(optional)</span>
@@ -83,7 +84,7 @@ export default function CompleteProfile() {
             max={todayIso()}
             value={form.dateOfBirth}
             onChange={(e) => setForm({ ...form, dateOfBirth: e.target.value })}
-            className="mt-1 w-full border border-stone rounded-lg px-4 py-3 focus:outline-none focus:border-olive"
+            className="mt-1 w-full min-w-0 box-border appearance-none bg-white border border-stone rounded-lg px-4 py-3 focus:outline-none focus:border-olive"
           />
         </label>
 

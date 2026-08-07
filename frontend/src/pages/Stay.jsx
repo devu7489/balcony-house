@@ -2,9 +2,16 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import apiClient from '../api/axiosClient'
 import LoadingScreen from '../components/LoadingScreen'
+import Select from '../components/Select'
 import { getCart, setDates as saveDates, addRoom, removeRoom } from '../lib/cart'
 
 const todayIso = () => new Date().toISOString().slice(0, 10)
+const nextDayIso = (dateStr) => {
+  const d = new Date(dateStr)
+  d.setDate(d.getDate() + 1)
+  return d.toISOString().slice(0, 10)
+}
+const tomorrowIso = () => nextDayIso(todayIso())
 
 export default function Stay() {
   const navigate = useNavigate()
@@ -12,10 +19,11 @@ export default function Stay() {
   const [loading, setLoading] = useState(true)
 
   const initialCart = getCart()
-  const [checkIn, setCheckIn] = useState(initialCart.checkIn)
-  const [checkOut, setCheckOut] = useState(initialCart.checkOut)
+  const [checkIn, setCheckIn] = useState(initialCart.checkIn || todayIso())
+  const [checkOut, setCheckOut] = useState(initialCart.checkOut || tomorrowIso())
   const [cartRooms, setCartRooms] = useState(initialCart.rooms)
   const [guestCounts, setGuestCounts] = useState({})
+  const [quantityCounts, setQuantityCounts] = useState({})
   const [availability, setAvailability] = useState({})
 
   useEffect(() => {
@@ -43,6 +51,7 @@ export default function Stay() {
   }, [checkIn, checkOut, properties])
 
   const guestsFor = (p) => guestCounts[p.id] ?? 1
+  const quantityFor = (p) => quantityCounts[p.id] ?? 1
   const inCart = (propertyId) => cartRooms.find((r) => r.propertyId === propertyId)
 
   const handleAdd = (p) => {
@@ -51,6 +60,7 @@ export default function Stay() {
       propertyName: p.name,
       propertyHeroImageUrl: p.heroImageUrl,
       guests: guestsFor(p),
+      quantity: quantityFor(p),
     })
     setCartRooms(updated.rooms)
   }
@@ -68,18 +78,18 @@ export default function Stay() {
     <div className="max-w-7xl mx-auto px-6 lg:px-10 py-20 pb-32">
       <h1 className="font-serif text-4xl mb-6">Stay</h1>
 
-      <div className="bg-white border border-stone rounded-xl2 p-5 mb-10 grid grid-cols-2 md:grid-cols-4 gap-3 items-end">
-        <label className="text-sm text-charcoal/70 col-span-1">
+      <div className="bg-white border border-stone rounded-xl2 p-5 mb-10 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 items-end overflow-hidden">
+        <label className="text-sm text-charcoal/70 col-span-1 min-w-0">
           Check-in
           <input
             type="date"
             min={todayIso()}
             value={checkIn}
-            onChange={(e) => { setCheckIn(e.target.value); setCheckOut('') }}
-            className="mt-1 w-full border border-stone rounded-lg px-3 py-2.5 focus:outline-none focus:border-olive"
+            onChange={(e) => { setCheckIn(e.target.value); setCheckOut(nextDayIso(e.target.value)) }}
+            className="mt-1 w-full min-w-0 box-border appearance-none bg-white border border-stone rounded-lg px-3 py-3 focus:outline-none focus:border-olive"
           />
         </label>
-        <label className="text-sm text-charcoal/70 col-span-1">
+        <label className="text-sm text-charcoal/70 col-span-1 min-w-0">
           Check-out
           <input
             type="date"
@@ -87,10 +97,10 @@ export default function Stay() {
             disabled={!checkIn}
             value={checkOut}
             onChange={(e) => setCheckOut(e.target.value)}
-            className="mt-1 w-full border border-stone rounded-lg px-3 py-2.5 focus:outline-none focus:border-olive disabled:opacity-50"
+            className="mt-1 w-full min-w-0 box-border appearance-none bg-white border border-stone rounded-lg px-3 py-3 focus:outline-none focus:border-olive disabled:opacity-50"
           />
         </label>
-        <p className="text-sm text-charcoal/50 col-span-2 md:col-span-2">
+        <p className="text-sm text-charcoal/50 col-span-1 sm:col-span-2 md:col-span-2 self-center">
           {datesReady
             ? 'Add rooms below to build a multi-room trip, or just view & book one room directly.'
             : 'Pick your dates to see live availability and add multiple rooms to one trip.'}
@@ -134,24 +144,46 @@ export default function Stay() {
                     <p className="text-xs text-charcoal/40">Pick dates above to add this room to a trip.</p>
                   ) : alreadyInCart ? (
                     <div className="flex items-center justify-between">
-                      <p className="text-sm text-olive">Added — {alreadyInCart.guests} guest{alreadyInCart.guests === 1 ? '' : 's'}</p>
+                      <p className="text-sm text-olive">
+                        Added — {alreadyInCart.quantity > 1 ? `${alreadyInCart.quantity} rooms, ` : ''}
+                        {alreadyInCart.guests} adult{alreadyInCart.guests === 1 ? '' : 's'}{alreadyInCart.quantity > 1 ? ' each' : ''}
+                      </p>
                       <button onClick={() => handleRemove(p.id)} className="text-xs text-red-600 hover:underline">Remove</button>
                     </div>
                   ) : avail === undefined ? (
                     <p className="text-xs text-charcoal/40">Checking availability…</p>
                   ) : avail?.available ? (
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        min={1}
-                        max={p.maxGuests}
-                        value={guestsFor(p)}
-                        onChange={(e) => setGuestCounts({ ...guestCounts, [p.id]: Number(e.target.value) })}
-                        className="w-16 border border-stone rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-olive"
-                      />
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-3 text-xs text-charcoal/60">
+                        <label className="flex items-center gap-1.5">
+                          Rooms
+                          <Select
+                            value={Math.min(quantityFor(p), avail.unitsLeft)}
+                            onChange={(e) => setQuantityCounts({ ...quantityCounts, [p.id]: Number(e.target.value) })}
+                            className="w-16 pl-2.5 py-2 text-sm"
+                          >
+                            {Array.from({ length: avail.unitsLeft }, (_, i) => i + 1).map((n) => (
+                              <option key={n} value={n}>{n}</option>
+                            ))}
+                          </Select>
+                        </label>
+                        <label className="flex items-center gap-1.5">
+                          Adults each
+                          <Select
+                            value={guestsFor(p)}
+                            onChange={(e) => setGuestCounts({ ...guestCounts, [p.id]: Number(e.target.value) })}
+                            className="w-16 pl-2.5 py-2 text-sm"
+                          >
+                            {Array.from({ length: p.maxGuests }, (_, i) => i + 1).map((n) => (
+                              <option key={n} value={n}>{n}</option>
+                            ))}
+                          </Select>
+                        </label>
+                      </div>
+                      <p className="text-xs text-charcoal/40">Kids under 12 stay free (max 2 per room).</p>
                       <button
                         onClick={() => handleAdd(p)}
-                        className="flex-1 text-sm px-4 py-2 rounded-full bg-olive text-warmwhite hover:bg-charcoal transition-colors"
+                        className="w-full text-sm px-4 py-2 rounded-full bg-olive text-warmwhite hover:bg-charcoal transition-colors"
                       >
                         + Add to trip
                       </button>
@@ -169,7 +201,9 @@ export default function Stay() {
       {cartRooms.length > 0 && (
         <div className="fixed bottom-0 left-0 right-0 bg-charcoal text-warmwhite z-30">
           <div className="max-w-7xl mx-auto px-6 lg:px-10 py-4 flex items-center justify-between">
-            <p className="text-sm">Your trip: {cartRooms.length} room{cartRooms.length === 1 ? '' : 's'} selected</p>
+            <p className="text-sm">
+              Your trip: {cartRooms.reduce((sum, r) => sum + (r.quantity || 1), 0)} room{cartRooms.reduce((sum, r) => sum + (r.quantity || 1), 0) === 1 ? '' : 's'} selected
+            </p>
             <button
               onClick={() => navigate('/checkout')}
               className="px-6 py-2.5 rounded-full bg-warmwhite text-charcoal hover:bg-stone transition-colors text-sm"

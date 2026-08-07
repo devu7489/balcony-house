@@ -3,6 +3,8 @@ package com.thebalconyhouse.backend.booking;
 import com.thebalconyhouse.backend.booking.dto.AdminBookingRequest;
 import com.thebalconyhouse.backend.booking.dto.BookingDto;
 import com.thebalconyhouse.backend.booking.dto.PaymentRequest;
+import com.thebalconyhouse.backend.booking.dto.RoomNumberRequest;
+import com.thebalconyhouse.backend.booking.dto.RoomUpgradeRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
@@ -53,7 +55,17 @@ public class AdminBookingController {
 
     @PostMapping("/{id}/payment")
     public BookingDto recordPayment(@PathVariable Long id, @Valid @RequestBody PaymentRequest request) {
-        return bookingService.recordPayment(id, request.method(), request.reference());
+        return bookingService.recordPayment(id, request.amount(), request.method(), request.reference());
+    }
+
+    @PostMapping("/{id}/room-number")
+    public BookingDto setRoomNumber(@PathVariable Long id, @RequestBody RoomNumberRequest request) {
+        return bookingService.setRoomNumber(id, request.roomNumber());
+    }
+
+    @PostMapping("/{id}/upgrade")
+    public BookingDto upgrade(@PathVariable Long id, @Valid @RequestBody RoomUpgradeRequest request) {
+        return bookingService.upgradeRoom(id, request.newPropertyId());
     }
 
     @GetMapping("/group/{groupId}")
@@ -78,6 +90,6 @@ public class AdminBookingController {
 
     @PostMapping("/group/{groupId}/payment")
     public List<BookingDto> recordGroupPayment(@PathVariable Long groupId, @Valid @RequestBody PaymentRequest request) {
-        return bookingService.recordGroupPayment(groupId, request.method(), request.reference());
+        return bookingService.recordGroupPayment(groupId, request.amount(), request.method(), request.reference());
     }
 }

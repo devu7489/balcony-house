@@ -1,6 +1,6 @@
 package com.thebalconyhouse.backend.booking.dto;
 
-import jakarta.validation.constraints.Future;
+import jakarta.validation.constraints.FutureOrPresent;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -13,8 +13,8 @@ public record AdminBookingRequest(
         @NotBlank String guestName,
         @NotBlank String guestPhone,
         String guestEmail,
-        @NotNull @Future LocalDate checkIn,
-        @NotNull @Future LocalDate checkOut,
+        @NotNull @FutureOrPresent LocalDate checkIn,
+        @NotNull @FutureOrPresent LocalDate checkOut,
         @Min(1) int guests,
         String notes,
         boolean paymentReceived,

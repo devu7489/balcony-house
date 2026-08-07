@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useHotelConfig } from '../context/HotelConfigContext'
 
 const links = [
   { to: '/stay', label: 'Stay' },
@@ -49,25 +50,7 @@ function AccountMenu({ user, logout }) {
               onClick={() => setOpen(false)}
               className="block px-4 py-3 hover:bg-stone/60 text-charcoal/80 border-t border-stone"
             >
-              Admin — Bookings
-            </NavLink>
-          )}
-          {user.isAdmin && (
-            <NavLink
-              to="/admin/messages"
-              onClick={() => setOpen(false)}
-              className="block px-4 py-3 hover:bg-stone/60 text-charcoal/80"
-            >
-              Admin — Messages
-            </NavLink>
-          )}
-          {user.isAdmin && (
-            <NavLink
-              to="/admin/subscribers"
-              onClick={() => setOpen(false)}
-              className="block px-4 py-3 hover:bg-stone/60 text-charcoal/80"
-            >
-              Admin — Subscribers
+              Admin
             </NavLink>
           )}
           <button
@@ -85,15 +68,16 @@ function AccountMenu({ user, logout }) {
 export default function Navbar() {
   const [open, setOpen] = useState(false)
   const { user, login, logout } = useAuth()
+  const { hotelName } = useHotelConfig()
 
   return (
     <header className="sticky top-0 z-40 bg-warmwhite/80 backdrop-blur-md border-b border-stone">
       <div className="max-w-7xl mx-auto px-6 lg:px-10 h-20 flex items-center justify-between">
         <NavLink to="/" className="font-serif text-xl tracking-tight">
-          The Balcony House
+          {hotelName}
         </NavLink>
 
-        <nav className="hidden md:flex items-center gap-8 text-sm">
+        <nav className="hidden lg:flex items-center gap-8 text-sm">
           {links.map((l) => (
             <NavLink
               key={l.to}
@@ -107,7 +91,7 @@ export default function Navbar() {
           ))}
         </nav>
 
-        <div className="hidden md:flex items-center gap-4">
+        <div className="hidden lg:flex items-center gap-4">
           {user ? (
             <AccountMenu user={user} logout={logout} />
           ) : (
@@ -117,7 +101,7 @@ export default function Navbar() {
           )}
         </div>
 
-        <button className="md:hidden" onClick={() => setOpen((o) => !o)} aria-label="Toggle menu">
+        <button className="lg:hidden" onClick={() => setOpen((o) => !o)} aria-label="Toggle menu">
           <span className="block w-6 h-0.5 bg-charcoal mb-1.5" />
           <span className="block w-6 h-0.5 bg-charcoal mb-1.5" />
           <span className="block w-6 h-0.5 bg-charcoal" />
@@ -125,7 +109,7 @@ export default function Navbar() {
       </div>
 
       {open && (
-        <nav className="md:hidden px-6 pb-6 flex flex-col gap-4 bg-warmwhite">
+        <nav className="lg:hidden px-6 pb-6 flex flex-col gap-4 bg-warmwhite">
           {links.map((l) => (
             <NavLink key={l.to} to={l.to} onClick={() => setOpen(false)} className="text-charcoal/80">
               {l.label}
@@ -139,17 +123,7 @@ export default function Navbar() {
                 </NavLink>
                 {user.isAdmin && (
                   <NavLink to="/admin" onClick={() => setOpen(false)} className="block text-charcoal/80 mb-3">
-                    Admin — Bookings
-                  </NavLink>
-                )}
-                {user.isAdmin && (
-                  <NavLink to="/admin/messages" onClick={() => setOpen(false)} className="block text-charcoal/80 mb-3">
-                    Admin — Messages
-                  </NavLink>
-                )}
-                {user.isAdmin && (
-                  <NavLink to="/admin/subscribers" onClick={() => setOpen(false)} className="block text-charcoal/80 mb-3">
-                    Admin — Subscribers
+                    Admin
                   </NavLink>
                 )}
                 <button onClick={logout} className="text-sm">Log out</button>

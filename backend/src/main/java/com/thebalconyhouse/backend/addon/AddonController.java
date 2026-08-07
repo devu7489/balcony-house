@@ -25,10 +25,10 @@ public class AddonController {
     @GetMapping("/childcare")
     public ChildcarePricingDto childcare(@RequestParam(required = false) @Min(1) Long nights) {
         if (nights == null) {
-            return new ChildcarePricingDto(null, null, ChildcarePricing.MAX_CHILDREN);
+            return new ChildcarePricingDto(null, null, ChildcarePricing.MAX_CHILDREN_PER_ROOM);
         }
         return new ChildcarePricingDto(childcarePricing.perDayRate(nights), childcarePricing.totalPerChild(nights),
-                ChildcarePricing.MAX_CHILDREN);
+                ChildcarePricing.MAX_CHILDREN_PER_ROOM);
     }
 
     @GetMapping("/fullboard")

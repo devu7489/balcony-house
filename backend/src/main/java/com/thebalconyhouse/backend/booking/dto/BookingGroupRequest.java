@@ -1,7 +1,7 @@
 package com.thebalconyhouse.backend.booking.dto;
 
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.Future;
+import jakarta.validation.constraints.FutureOrPresent;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -13,10 +13,12 @@ import java.util.List;
 
 public record BookingGroupRequest(
         @NotBlank String guestPhone,
-        @NotNull @Future LocalDate checkIn,
-        @NotNull @Future LocalDate checkOut,
+        @NotNull @FutureOrPresent LocalDate checkIn,
+        @NotNull @FutureOrPresent LocalDate checkOut,
         String notes,
         @NotEmpty List<@Valid GroupRoomSelection> rooms,
-        @Min(0) @Max(2) int childrenCount,
+        // Real cap is 2 kids per room in the request, enforced dynamically in BookingService
+        // (annotations need a compile-time literal, so this is just a generous outer bound).
+        @Min(0) @Max(24) int childrenCount,
         boolean fullBoard
 ) {}

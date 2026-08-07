@@ -5,6 +5,8 @@ import com.thebalconyhouse.backend.booking.dto.BookingDto;
 import com.thebalconyhouse.backend.booking.dto.BookingGroupRequest;
 import com.thebalconyhouse.backend.booking.dto.BookingRequest;
 import com.thebalconyhouse.backend.booking.dto.GroupRoomSelection;
+import com.thebalconyhouse.backend.booking.dto.PaymentRecordDto;
+import com.thebalconyhouse.backend.booking.dto.TodayScheduleDto;
 import com.thebalconyhouse.backend.addon.ChildcarePricing;
 import com.thebalconyhouse.backend.addon.FullBoardPricing;
 import com.thebalconyhouse.backend.addon.RoomPricing;
@@ -32,16 +34,18 @@ public class BookingService {
     private final BookingRepository bookingRepository;
     private final BookingGroupRepository bookingGroupRepository;
     private final PropertyRepository propertyRepository;
+    private final PaymentRepository paymentRepository;
     private final RoomPricing roomPricing;
     private final ChildcarePricing childcarePricing;
     private final FullBoardPricing fullBoardPricing;
 
     public BookingService(BookingRepository bookingRepository, BookingGroupRepository bookingGroupRepository,
-                           PropertyRepository propertyRepository, RoomPricing roomPricing,
-                           ChildcarePricing childcarePricing, FullBoardPricing fullBoardPricing) {
+                           PropertyRepository propertyRepository, PaymentRepository paymentRepository,
+                           RoomPricing roomPricing, ChildcarePricing childcarePricing, FullBoardPricing fullBoardPricing) {
         this.bookingRepository = bookingRepository;
         this.bookingGroupRepository = bookingGroupRepository;
         this.propertyRepository = propertyRepository;
+        this.paymentRepository = paymentRepository;
         this.roomPricing = roomPricing;
         this.childcarePricing = childcarePricing;
         this.fullBoardPricing = fullBoardPricing;
@@ -80,6 +84,13 @@ public class BookingService {
      */
     @Transactional
     public List<BookingDto> createGroup(BookingGroupRequest request, String guestEmail, String guestName) {
+        int maxChildren = request.rooms().size() * ChildcarePricing.MAX_CHILDREN_PER_ROOM;
+        if (request.childrenCount() > maxChildren) {
+            throw new IllegalArgumentException(
+                    "Up to " + ChildcarePricing.MAX_CHILDREN_PER_ROOM + " kids per room - "
+                            + maxChildren + " max for " + request.rooms().size() + " room(s)");
+        }
+
         Map<Long, Integer> consumedInRequest = new HashMap<>();
         for (GroupRoomSelection selection : request.rooms()) {
             Property property = findProperty(selection.propertyId());
@@ -121,11 +132,17 @@ public class BookingService {
                 checkIn, checkOut, guests, notes, Instant.now());
         booking.setBookingGroupId(bookingGroupId);
         booking.setAmount(amount);
-        booking.setInitialPayment(initialPaymentStatus, paymentMethod, paymentReference);
         booking.setChildcare(childrenCount, childcareFee);
         booking.setFullBoard(fullBoard, fullBoardFee);
         booking.setDiscount(discountPercent, discountAmount);
+        booking.setInitialPayment(initialPaymentStatus, paymentMethod, paymentReference);
         Booking saved = bookingRepository.save(booking);
+        // Must come after the addon setters above and the initial save (needs the booking's
+        // id) - records an itemized Payment row for the full total so a booking created
+        // already-paid (e.g. an admin phone booking) has correct payment history from day one.
+        if (initialPaymentStatus == PaymentStatus.PAID) {
+            saved = recordPaymentInternal(saved, null, paymentMethod, paymentReference);
+        }
         return toDto(saved, property);
     }
 
@@ -151,11 +168,11 @@ public class BookingService {
     }
 
     public List<BookingDto> findMine(String guestEmail) {
-        return enrich(bookingRepository.findByGuestEmail(guestEmail));
+        return enrich(bookingRepository.findByGuestEmailOrderByCreatedAtDesc(guestEmail));
     }
 
     public List<BookingDto> findAll() {
-        return enrich(bookingRepository.findAllByOrderByCheckInDesc());
+        return enrich(bookingRepository.findAllByOrderByCreatedAtDesc());
     }
 
     @Transactional
@@ -164,7 +181,54 @@ public class BookingService {
         if (booking.getStatus() != BookingStatus.CONFIRMED) {
             throw new IllegalArgumentException("Only confirmed bookings can be checked in");
         }
+        if (booking.getRoomNumber() == null || booking.getRoomNumber().isBlank()) {
+            throw new IllegalArgumentException("Assign a room number before checking in");
+        }
         return transitionTo(booking, BookingStatus.CHECKED_IN);
+    }
+
+    /**
+     * Moves a not-yet-checked-in booking to a different room category, recomputing its
+     * room amount for the new type. If it was already marked PAID, that mark no longer
+     * reflects the new total, so it's reset to PENDING - the front desk records a fresh
+     * payment for the corrected amount (this app has no partial-payment ledger).
+     */
+    @Transactional
+    public BookingDto upgradeRoom(Long bookingId, Long newPropertyId) {
+        Booking booking = findBooking(bookingId);
+        if (booking.getStatus() != BookingStatus.CONFIRMED && booking.getStatus() != BookingStatus.CHECKED_IN) {
+            throw new IllegalArgumentException("Only confirmed or checked-in bookings can change rooms");
+        }
+        if (newPropertyId.equals(booking.getPropertyId())) {
+            throw new IllegalArgumentException("Already booked in this room type");
+        }
+        Property newProperty = findProperty(newPropertyId);
+        if (unitsLeft(newProperty, booking.getCheckIn(), booking.getCheckOut()) <= 0) {
+            throw new RoomUnavailableException("No rooms of this type are available for the selected dates");
+        }
+        if (booking.getGuests() > newProperty.getMaxGuests()) {
+            throw new IllegalArgumentException("This room sleeps at most " + newProperty.getMaxGuests() + " guests");
+        }
+
+        // Nights already spent bill at the old room's rate; only the remaining nights move
+        // to the new room's rate - correct whether this is a same-day pre-arrival swap
+        // (elapsedNights resolves to 0) or a genuine mid-stay room change.
+        long totalNights = ChronoUnit.DAYS.between(booking.getCheckIn(), booking.getCheckOut());
+        long elapsedNights = ChronoUnit.DAYS.between(booking.getCheckIn(), LocalDate.now());
+        BigDecimal newPerNightRate = roomPricing.priceForStay(newProperty, booking.getCheckIn(), totalNights);
+        BigDecimal newAmount = RoomPricing.proratedAmount(booking.getAmount(), totalNights, elapsedNights, newPerNightRate);
+
+        booking.setPropertyId(newProperty.getId());
+        booking.setAmount(newAmount);
+        booking.setRoomNumber(null);
+        if (booking.getPaymentStatus() == PaymentStatus.PAID) {
+            // Only flips the status - amountPaid/method/reference are left as-is, so the
+            // front desk still sees exactly how much was already collected (see
+            // Booking.setPaymentStatus's own comment for why this matters).
+            booking.setPaymentStatus(PaymentStatus.PENDING);
+        }
+        Booking saved = bookingRepository.save(booking);
+        return toDto(saved, newProperty);
     }
 
     @Transactional
@@ -172,6 +236,9 @@ public class BookingService {
         Booking booking = findBooking(bookingId);
         if (booking.getStatus() != BookingStatus.CHECKED_IN) {
             throw new IllegalArgumentException("Only checked-in bookings can be checked out");
+        }
+        if (booking.getPaymentStatus() != PaymentStatus.PAID) {
+            throw new IllegalArgumentException("Record payment before checking this booking out");
         }
         return transitionTo(booking, BookingStatus.CHECKED_OUT);
     }
@@ -192,7 +259,7 @@ public class BookingService {
 
     public List<BookingDto> findByGroupId(Long groupId) {
         findGroup(groupId);
-        return enrich(bookingRepository.findByBookingGroupId(groupId));
+        return enrich(bookingRepository.findByBookingGroupIdOrderByIdAsc(groupId));
     }
 
     /**
@@ -204,7 +271,14 @@ public class BookingService {
     @Transactional
     public List<BookingDto> checkInGroup(Long groupId) {
         findGroup(groupId);
-        return bookingRepository.findByBookingGroupId(groupId).stream()
+        List<Booking> bookings = bookingRepository.findByBookingGroupIdOrderByIdAsc(groupId);
+        boolean anyMissingRoom = bookings.stream()
+                .anyMatch(b -> b.getStatus() == BookingStatus.CONFIRMED
+                        && (b.getRoomNumber() == null || b.getRoomNumber().isBlank()));
+        if (anyMissingRoom) {
+            throw new IllegalArgumentException("Assign a room number to every room before checking in the trip");
+        }
+        return bookings.stream()
                 .map(b -> b.getStatus() == BookingStatus.CONFIRMED
                         ? transitionTo(b, BookingStatus.CHECKED_IN)
                         : toDto(b, propertyRepository.findById(b.getPropertyId()).orElse(null)))
@@ -214,7 +288,13 @@ public class BookingService {
     @Transactional
     public List<BookingDto> checkOutGroup(Long groupId) {
         findGroup(groupId);
-        return bookingRepository.findByBookingGroupId(groupId).stream()
+        List<Booking> bookings = bookingRepository.findByBookingGroupIdOrderByIdAsc(groupId);
+        boolean anyUnpaid = bookings.stream()
+                .anyMatch(b -> b.getStatus() == BookingStatus.CHECKED_IN && b.getPaymentStatus() != PaymentStatus.PAID);
+        if (anyUnpaid) {
+            throw new IllegalArgumentException("Record payment for the whole trip before checking out");
+        }
+        return bookings.stream()
                 .map(b -> b.getStatus() == BookingStatus.CHECKED_IN
                         ? transitionTo(b, BookingStatus.CHECKED_OUT)
                         : toDto(b, propertyRepository.findById(b.getPropertyId()).orElse(null)))
@@ -242,7 +322,7 @@ public class BookingService {
     }
 
     private List<BookingDto> cancelGroupInternal(Long groupId) {
-        return bookingRepository.findByBookingGroupId(groupId).stream()
+        return bookingRepository.findByBookingGroupIdOrderByIdAsc(groupId).stream()
                 .map(b -> b.getStatus() == BookingStatus.CHECKED_OUT
                         ? toDto(b, propertyRepository.findById(b.getPropertyId()).orElse(null))
                         : transitionTo(b, BookingStatus.CANCELLED))
@@ -260,40 +340,73 @@ public class BookingService {
         if (!guestEmail.equals(group.getGuestEmail())) {
             throw new ForbiddenException("You can only pay for your own trips");
         }
-        return recordGroupPaymentInternal(groupId, "Online", null);
+        return recordGroupPaymentInternal(groupId, null, "Online", null);
     }
 
     @Transactional
-    public List<BookingDto> recordGroupPayment(Long groupId, String method, String reference) {
+    public List<BookingDto> recordGroupPayment(Long groupId, BigDecimal amount, String method, String reference) {
         findGroup(groupId);
-        return recordGroupPaymentInternal(groupId, method, reference);
+        return recordGroupPaymentInternal(groupId, amount, method, reference);
     }
 
-    private List<BookingDto> recordGroupPaymentInternal(Long groupId, String method, String reference) {
-        List<Booking> bookings = bookingRepository.findByBookingGroupId(groupId);
+    /**
+     * amount == null means "pay everything still due, across every unpaid room" (the
+     * original one-click behaviour). An explicit amount is applied room by room, in id
+     * order, until it's used up - so a partial trip payment settles the earliest rooms
+     * first rather than being silently rejected or split evenly.
+     */
+    private List<BookingDto> recordGroupPaymentInternal(Long groupId, BigDecimal amount, String method, String reference) {
+        List<Booking> bookings = bookingRepository.findByBookingGroupIdOrderByIdAsc(groupId);
         if (bookings.stream().allMatch(b -> b.getStatus() == BookingStatus.CANCELLED)) {
             throw new IllegalArgumentException("Can't record payment for a cancelled trip");
         }
-        return bookings.stream()
-                .map(b -> {
-                    if (b.getStatus() != BookingStatus.CANCELLED && b.getPaymentStatus() != PaymentStatus.PAID) {
-                        b.markPaid(method, reference);
-                        b = bookingRepository.save(b);
-                    }
-                    return toDto(b, propertyRepository.findById(b.getPropertyId()).orElse(null));
-                })
+        BigDecimal remaining = amount;
+        for (Booking b : bookings) {
+            if (b.getStatus() == BookingStatus.CANCELLED || b.getPaymentStatus() == PaymentStatus.PAID) continue;
+            BigDecimal due = b.getFullTotal().subtract(b.getAmountPaid());
+            if (due.signum() <= 0) continue;
+            BigDecimal thisPayment = remaining == null ? due : remaining.min(due);
+            if (thisPayment.signum() <= 0) continue;
+            recordPaymentInternal(b, thisPayment, method, reference);
+            if (remaining != null) {
+                remaining = remaining.subtract(thisPayment);
+            }
+        }
+        return bookingRepository.findByBookingGroupIdOrderByIdAsc(groupId).stream()
+                .map(b -> toDto(b, propertyRepository.findById(b.getPropertyId()).orElse(null)))
                 .toList();
     }
 
     @Transactional
-    public BookingDto recordPayment(Long bookingId, String method, String reference) {
+    public BookingDto recordPayment(Long bookingId, BigDecimal amount, String method, String reference) {
         Booking booking = findBooking(bookingId);
         if (booking.getStatus() == BookingStatus.CANCELLED) {
             throw new IllegalArgumentException("Can't record payment for a cancelled booking");
         }
-        booking.markPaid(method, reference);
-        Booking saved = bookingRepository.save(booking);
+        Booking saved = recordPaymentInternal(booking, amount, method, reference);
         return toDto(saved, propertyRepository.findById(saved.getPropertyId()).orElse(null));
+    }
+
+    /**
+     * Records one itemized Payment row and rolls it into the booking's running amountPaid/
+     * paymentStatus - this is the single place a payment is ever recorded, so "how much was
+     * paid, when, and by what method" is never overwritten or lost (see Payment's own
+     * comment for why that matters - it's what an invoice needs).
+     * amount == null means "whatever's still due right now".
+     */
+    private Booking recordPaymentInternal(Booking booking, BigDecimal amount, String method, String reference) {
+        BigDecimal due = booking.getFullTotal().subtract(booking.getAmountPaid());
+        BigDecimal amountToRecord = amount != null ? amount : due;
+        paymentRepository.save(new Payment(booking.getId(), amountToRecord, method, reference, Instant.now()));
+
+        BigDecimal totalPaid = paymentRepository.findByBookingIdOrderByPaidAtAsc(booking.getId()).stream()
+                .map(Payment::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        booking.setAmountPaid(totalPaid);
+        booking.setPaymentMethod(method);
+        booking.setPaymentReference(reference);
+        booking.setPaymentStatus(totalPaid.compareTo(booking.getFullTotal()) >= 0 ? PaymentStatus.PAID : PaymentStatus.PENDING);
+        return bookingRepository.save(booking);
     }
 
     private BookingGroup findGroup(Long groupId) {
@@ -323,8 +436,11 @@ public class BookingService {
         List<Long> propertyIds = bookings.stream().map(Booking::getPropertyId).distinct().toList();
         Map<Long, Property> propertiesById = propertyRepository.findAllById(propertyIds).stream()
                 .collect(java.util.stream.Collectors.toMap(Property::getId, Function.identity()));
+        List<Long> bookingIds = bookings.stream().map(Booking::getId).toList();
+        Map<Long, List<Payment>> paymentsByBooking = paymentRepository.findByBookingIdInOrderByPaidAtAsc(bookingIds).stream()
+                .collect(java.util.stream.Collectors.groupingBy(Payment::getBookingId));
         return bookings.stream()
-                .map(b -> toDto(b, propertiesById.get(b.getPropertyId())))
+                .map(b -> toDto(b, propertiesById.get(b.getPropertyId()), paymentsByBooking.getOrDefault(b.getId(), List.of())))
                 .toList();
     }
 
@@ -339,13 +455,51 @@ public class BookingService {
     }
 
     private BookingDto toDto(Booking b, Property property) {
+        return toDto(b, property, paymentRepository.findByBookingIdOrderByPaidAtAsc(b.getId()));
+    }
+
+    private BookingDto toDto(Booking b, Property property, List<Payment> payments) {
+        List<PaymentRecordDto> paymentDtos = payments.stream()
+                .map(p -> new PaymentRecordDto(p.getId(), p.getBookingId(), p.getAmount(), p.getMethod(), p.getReference(), p.getPaidAt()))
+                .toList();
         return new BookingDto(b.getId(), b.getPropertyId(),
                 property != null ? property.getName() : null,
                 property != null ? property.getHeroImageUrl() : null,
                 b.getGuestEmail(), b.getGuestName(), b.getGuestPhone(),
                 b.getCheckIn(), b.getCheckOut(), b.getGuests(), b.getNotes(), b.getStatus(),
-                b.getBookingGroupId(), b.getAmount(), b.getPaymentStatus(), b.getPaymentMethod(),
-                b.getPaymentReference(), b.getChildrenCount(), b.getChildcareFee(),
+                b.getBookingGroupId(), b.getCreatedAt(), b.getRoomNumber(), b.getAmount(), b.getPaymentStatus(), b.getPaymentMethod(),
+                b.getPaymentReference(), b.getAmountPaid(), paymentDtos, b.getChildrenCount(), b.getChildcareFee(),
                 b.isFullBoard(), b.getFullBoardFee(), b.getDiscountPercent(), b.getDiscountAmount());
+    }
+
+    @Transactional
+    public BookingDto setRoomNumber(Long bookingId, String roomNumber) {
+        Booking booking = findBooking(bookingId);
+        if (booking.getStatus() == BookingStatus.CHECKED_OUT || booking.getStatus() == BookingStatus.CANCELLED) {
+            throw new IllegalArgumentException("Can't change the room assignment after checkout or cancellation");
+        }
+        String normalized = roomNumber == null || roomNumber.isBlank() ? null : roomNumber.trim();
+        if (normalized != null) {
+            List<Booking> conflicts = bookingRepository.findConflictingRoomNumber(
+                    normalized, bookingId, booking.getCheckIn(), booking.getCheckOut());
+            if (!conflicts.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "Room " + normalized + " is already assigned to another booking for overlapping dates");
+            }
+        }
+        booking.setRoomNumber(normalized);
+        Booking saved = bookingRepository.save(booking);
+        return toDto(saved, propertyRepository.findById(saved.getPropertyId()).orElse(null));
+    }
+
+    /**
+     * Today's front-desk view: who's arriving and who's leaving today, for active
+     * (non-cancelled) bookings only - a completed or cancelled stay isn't actionable.
+     */
+    public TodayScheduleDto findTodaySchedule() {
+        LocalDate today = LocalDate.now();
+        List<BookingDto> arrivals = enrich(bookingRepository.findArrivals(today, BookingStatus.CONFIRMED));
+        List<BookingDto> departures = enrich(bookingRepository.findDepartures(today, BookingStatus.CHECKED_IN));
+        return new TodayScheduleDto(arrivals, departures);
     }
 }

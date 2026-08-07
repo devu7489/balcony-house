@@ -17,7 +17,9 @@ import About from './pages/About'
 import Contact from './pages/Contact'
 import MyBookings from './pages/MyBookings'
 import Checkout from './pages/Checkout'
+import AdminLayout from './pages/AdminLayout'
 import Admin from './pages/Admin'
+import AdminToday from './pages/AdminToday'
 import AdminBookingDetail from './pages/AdminBookingDetail'
 import AdminTripDetail from './pages/AdminTripDetail'
 import AdminMessages from './pages/AdminMessages'
@@ -63,10 +65,15 @@ export default function App() {
               path="/admin"
               element={
                 <AdminRoute>
-                  <Admin />
+                  <AdminLayout />
                 </AdminRoute>
               }
-            />
+            >
+              <Route index element={<Admin />} />
+              <Route path="today" element={<AdminToday />} />
+              <Route path="messages" element={<AdminMessages />} />
+              <Route path="subscribers" element={<AdminSubscribers />} />
+            </Route>
             <Route
               path="/admin/bookings/:id"
               element={
@@ -80,22 +87,6 @@ export default function App() {
               element={
                 <AdminRoute>
                   <AdminTripDetail />
-                </AdminRoute>
-              }
-            />
-            <Route
-              path="/admin/messages"
-              element={
-                <AdminRoute>
-                  <AdminMessages />
-                </AdminRoute>
-              }
-            />
-            <Route
-              path="/admin/subscribers"
-              element={
-                <AdminRoute>
-                  <AdminSubscribers />
                 </AdminRoute>
               }
             />

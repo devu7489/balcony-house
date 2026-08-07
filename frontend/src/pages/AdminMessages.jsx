@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 import apiClient from '../api/axiosClient'
 import LoadingScreen from '../components/LoadingScreen'
 
@@ -16,14 +15,8 @@ export default function AdminMessages() {
   if (loading) return <LoadingScreen label="Loading messages" />
 
   return (
-    <div className="max-w-4xl mx-auto px-6 lg:px-10 py-20">
-      <div className="flex items-center justify-between mb-12">
-        <h1 className="font-serif text-4xl">Admin — Messages</h1>
-        <div className="flex items-center gap-4">
-          <Link to="/admin" className="text-sm text-olive hover:underline">Bookings &rarr;</Link>
-          <Link to="/admin/subscribers" className="text-sm text-olive hover:underline">Subscribers &rarr;</Link>
-        </div>
-      </div>
+    <div>
+      <h1 className="font-serif text-3xl sm:text-4xl mb-12">Messages</h1>
 
       {messages.length === 0 ? (
         <p className="text-charcoal/70">No messages yet.</p>

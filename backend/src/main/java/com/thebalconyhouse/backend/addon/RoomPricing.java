@@ -55,4 +55,24 @@ public class RoomPricing {
         if (nights <= 10) return baseRate.multiply(midStayRatio);
         return baseRate.multiply(longStayRatio);
     }
+
+    /**
+     * Room total for a mid-stay room change: nights already spent bill at the old room's
+     * effective per-night rate (derived from what was actually charged, so it stays
+     * consistent with whatever tier/peak pricing applied when the stay was originally
+     * booked), and the remaining nights bill at the new room's rate. For a change made
+     * before check-in (elapsedNights = 0) this collapses to simply "totalNights at the
+     * new rate", which is also the right answer for a plain pre-arrival upgrade. Pure/static
+     * so it's unit-testable without a Spring context or database.
+     */
+    public static BigDecimal proratedAmount(BigDecimal oldTotalAmount, long totalNights, long elapsedNights, BigDecimal newPerNightRate) {
+        long clampedElapsed = Math.max(0, Math.min(elapsedNights, totalNights));
+        long remainingNights = totalNights - clampedElapsed;
+        BigDecimal oldPerNight = totalNights > 0
+                ? oldTotalAmount.divide(BigDecimal.valueOf(totalNights), 2, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
+        BigDecimal elapsedPortion = oldPerNight.multiply(BigDecimal.valueOf(clampedElapsed));
+        BigDecimal remainingPortion = newPerNightRate.multiply(BigDecimal.valueOf(remainingNights));
+        return elapsedPortion.add(remainingPortion).setScale(2, RoundingMode.HALF_UP);
+    }
 }
