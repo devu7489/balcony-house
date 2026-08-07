@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import apiClient from '../api/axiosClient'
 import LoadingScreen from '../components/LoadingScreen'
 import StatusBadge from '../components/StatusBadge'
+import PaymentBadge from '../components/PaymentBadge'
 
 export default function AdminBookingDetail() {
   const { id } = useParams()
@@ -11,6 +12,9 @@ export default function AdminBookingDetail() {
   const [notFound, setNotFound] = useState(false)
   const [actionStatus, setActionStatus] = useState('idle')
   const [actionError, setActionError] = useState('')
+  const [showPaymentForm, setShowPaymentForm] = useState(false)
+  const [paymentMethod, setPaymentMethod] = useState('Cash')
+  const [paymentReference, setPaymentReference] = useState('')
 
   const load = () => apiClient.get(`/admin/bookings/${id}`)
     .then(({ data }) => setBooking(data))
@@ -25,6 +29,25 @@ export default function AdminBookingDetail() {
     setActionError('')
     try {
       await apiClient.post(`/admin/bookings/${id}/${action}`)
+      await load()
+    } catch (err) {
+      setActionError(err.response?.data?.message || 'Something went wrong, please try again.')
+    } finally {
+      setActionStatus('idle')
+    }
+  }
+
+  const markAsPaid = async (e) => {
+    e.preventDefault()
+    setActionStatus('running')
+    setActionError('')
+    try {
+      await apiClient.post(`/admin/bookings/${id}/payment`, {
+        method: paymentMethod,
+        reference: paymentReference || null,
+      })
+      setShowPaymentForm(false)
+      setPaymentReference('')
       await load()
     } catch (err) {
       setActionError(err.response?.data?.message || 'Something went wrong, please try again.')
@@ -83,6 +106,76 @@ export default function AdminBookingDetail() {
             <div className="mb-6 bg-stone/50 border border-stone rounded-lg p-4">
               <p className="text-xs uppercase tracking-wide text-charcoal/50 mb-1">Special request</p>
               <p className="text-charcoal/80 whitespace-pre-wrap">{booking.notes}</p>
+            </div>
+          )}
+
+          {booking.status !== 'CANCELLED' && (
+            <div className="mb-6 border border-stone rounded-lg p-4">
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <div className="flex items-center gap-3">
+                  {booking.amount != null && (
+                    <span className="font-serif text-lg">
+                      ₹{(Number(booking.amount) + Number(booking.childcareFee || 0)).toLocaleString()}
+                    </span>
+                  )}
+                  <PaymentBadge status={booking.paymentStatus} />
+                </div>
+                {booking.childrenCount > 0 && (
+                  <p className="text-sm text-charcoal/60">
+                    incl. Kids Play Zone &middot; {booking.childrenCount} child{booking.childrenCount === 1 ? '' : 'ren'} &middot; ₹{Number(booking.childcareFee).toLocaleString()}
+                  </p>
+                )}
+                {(booking.paymentMethod || booking.paymentReference) && (
+                  <p className="text-sm text-charcoal/60">
+                    {[booking.paymentMethod, booking.paymentReference].filter(Boolean).join(' · ')}
+                  </p>
+                )}
+                {booking.paymentStatus !== 'PAID' && !showPaymentForm && (
+                  <button onClick={() => setShowPaymentForm(true)} className="text-sm text-olive hover:underline">
+                    Mark as paid
+                  </button>
+                )}
+              </div>
+
+              {showPaymentForm && (
+                <form onSubmit={markAsPaid} className="grid grid-cols-2 gap-3 mt-4 pt-4 border-t border-stone">
+                  <label className="text-sm text-charcoal/70">
+                    Method
+                    <select
+                      value={paymentMethod}
+                      onChange={(e) => setPaymentMethod(e.target.value)}
+                      className="mt-1 w-full border border-stone rounded-lg px-3 py-2.5 focus:outline-none focus:border-olive bg-white"
+                    >
+                      <option>Cash</option>
+                      <option>UPI</option>
+                      <option>Bank Transfer</option>
+                      <option>Card</option>
+                      <option>Other</option>
+                    </select>
+                  </label>
+                  <label className="text-sm text-charcoal/70">
+                    Reference <span className="text-charcoal/40">(optional)</span>
+                    <input
+                      placeholder="txn id / notes"
+                      value={paymentReference}
+                      onChange={(e) => setPaymentReference(e.target.value)}
+                      className="mt-1 w-full border border-stone rounded-lg px-3 py-2.5 focus:outline-none focus:border-olive"
+                    />
+                  </label>
+                  <div className="col-span-2 flex gap-3">
+                    <button
+                      type="submit"
+                      disabled={actionStatus === 'running'}
+                      className="px-5 py-2 rounded-full bg-olive text-warmwhite hover:bg-charcoal transition-colors disabled:opacity-50 text-sm"
+                    >
+                      Confirm payment
+                    </button>
+                    <button type="button" onClick={() => setShowPaymentForm(false)} className="text-sm text-charcoal/60 hover:underline">
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              )}
             </div>
           )}
 

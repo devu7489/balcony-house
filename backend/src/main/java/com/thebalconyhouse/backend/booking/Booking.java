@@ -1,6 +1,7 @@
 package com.thebalconyhouse.backend.booking;
 
 import jakarta.persistence.*;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 
@@ -25,6 +26,20 @@ public class Booking {
 
     @Enumerated(EnumType.STRING)
     private BookingStatus status = BookingStatus.CONFIRMED;
+
+    private BigDecimal amount;
+
+    @Enumerated(EnumType.STRING)
+    private PaymentStatus paymentStatus = PaymentStatus.PENDING;
+
+    private String paymentMethod;
+
+    @Column(length = 500)
+    private String paymentReference;
+
+    private int childrenCount = 0;
+
+    private BigDecimal childcareFee = BigDecimal.ZERO;
 
     protected Booking() {}
 
@@ -55,4 +70,25 @@ public class Booking {
     public void setStatus(BookingStatus status) { this.status = status; }
     public Long getBookingGroupId() { return bookingGroupId; }
     public void setBookingGroupId(Long bookingGroupId) { this.bookingGroupId = bookingGroupId; }
+    public BigDecimal getAmount() { return amount; }
+    public void setAmount(BigDecimal amount) { this.amount = amount; }
+    public PaymentStatus getPaymentStatus() { return paymentStatus; }
+    public String getPaymentMethod() { return paymentMethod; }
+    public String getPaymentReference() { return paymentReference; }
+    public void markPaid(String paymentMethod, String paymentReference) {
+        this.paymentStatus = PaymentStatus.PAID;
+        this.paymentMethod = paymentMethod;
+        this.paymentReference = paymentReference;
+    }
+    public void setInitialPayment(PaymentStatus paymentStatus, String paymentMethod, String paymentReference) {
+        this.paymentStatus = paymentStatus;
+        this.paymentMethod = paymentMethod;
+        this.paymentReference = paymentReference;
+    }
+    public int getChildrenCount() { return childrenCount; }
+    public BigDecimal getChildcareFee() { return childcareFee; }
+    public void setChildcare(int childrenCount, BigDecimal childcareFee) {
+        this.childrenCount = childrenCount;
+        this.childcareFee = childcareFee;
+    }
 }

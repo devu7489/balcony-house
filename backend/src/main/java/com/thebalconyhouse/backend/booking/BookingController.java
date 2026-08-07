@@ -48,4 +48,9 @@ public class BookingController {
     public List<BookingDto> cancelGroup(@PathVariable Long groupId, @AuthenticationPrincipal OAuth2User principal) {
         return bookingService.cancelOwnGroup(groupId, principal.getAttribute("email"));
     }
+
+    @PostMapping("/group/{groupId}/pay")
+    public List<BookingDto> pay(@PathVariable Long groupId, @AuthenticationPrincipal OAuth2User principal) {
+        return bookingService.payGroup(groupId, principal.getAttribute("email"));
+    }
 }

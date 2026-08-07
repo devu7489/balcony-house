@@ -5,6 +5,7 @@ import com.thebalconyhouse.backend.booking.dto.BookingDto;
 import com.thebalconyhouse.backend.booking.dto.BookingGroupRequest;
 import com.thebalconyhouse.backend.booking.dto.BookingRequest;
 import com.thebalconyhouse.backend.booking.dto.GroupRoomSelection;
+import com.thebalconyhouse.backend.addon.ChildcarePricing;
 import com.thebalconyhouse.backend.common.ForbiddenException;
 import com.thebalconyhouse.backend.common.ResourceNotFoundException;
 import com.thebalconyhouse.backend.property.Property;
@@ -13,8 +14,10 @@ import com.thebalconyhouse.backend.property.dto.AvailabilityDto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -44,13 +47,18 @@ public class BookingService {
     @Transactional
     public BookingDto create(BookingRequest request, String guestEmail, String guestName) {
         return createInternal(request.propertyId(), guestEmail, guestName, request.guestPhone(),
-                request.checkIn(), request.checkOut(), request.guests(), request.notes(), null);
+                request.checkIn(), request.checkOut(), request.guests(), request.notes(), null,
+                PaymentStatus.PENDING, null, null, 0);
     }
 
     @Transactional
     public BookingDto createForAdmin(AdminBookingRequest request) {
+        PaymentStatus paymentStatus = request.paymentReceived() ? PaymentStatus.PAID : PaymentStatus.PENDING;
+        String paymentMethod = request.paymentReceived() ? request.paymentMethod() : null;
+        String paymentReference = request.paymentReceived() ? request.paymentReference() : null;
         return createInternal(request.propertyId(), request.guestEmail(), request.guestName(), request.guestPhone(),
-                request.checkIn(), request.checkOut(), request.guests(), request.notes(), null);
+                request.checkIn(), request.checkOut(), request.guests(), request.notes(), null,
+                paymentStatus, paymentMethod, paymentReference, request.childrenCount());
     }
 
     /**
@@ -73,20 +81,31 @@ public class BookingService {
 
         return request.rooms().stream()
                 .map(selection -> createInternal(selection.propertyId(), guestEmail, guestName, request.guestPhone(),
-                        request.checkIn(), request.checkOut(), selection.guests(), request.notes(), group.getId()))
+                        request.checkIn(), request.checkOut(), selection.guests(), request.notes(), group.getId(),
+                        PaymentStatus.PENDING, null, null, request.childrenCount()))
                 .toList();
     }
 
     private BookingDto createInternal(Long propertyId, String guestEmail, String guestName, String guestPhone,
-                                       LocalDate checkIn, LocalDate checkOut, int guests, String notes, Long bookingGroupId) {
+                                       LocalDate checkIn, LocalDate checkOut, int guests, String notes, Long bookingGroupId,
+                                       PaymentStatus initialPaymentStatus, String paymentMethod, String paymentReference,
+                                       int childrenCount) {
         Property property = findProperty(propertyId);
         validateRoom(property, checkIn, checkOut, guests, 0);
 
         Booking booking = new Booking(property.getId(), guestEmail, guestName, guestPhone,
                 checkIn, checkOut, guests, notes, Instant.now());
         booking.setBookingGroupId(bookingGroupId);
+        booking.setAmount(computeAmount(property, checkIn, checkOut));
+        booking.setInitialPayment(initialPaymentStatus, paymentMethod, paymentReference);
+        booking.setChildcare(childrenCount, ChildcarePricing.PRICE_PER_CHILD.multiply(BigDecimal.valueOf(childrenCount)));
         Booking saved = bookingRepository.save(booking);
         return toDto(saved, property);
+    }
+
+    private BigDecimal computeAmount(Property property, LocalDate checkIn, LocalDate checkOut) {
+        long nights = ChronoUnit.DAYS.between(checkIn, checkOut);
+        return property.getPricePerNight().multiply(BigDecimal.valueOf(nights));
     }
 
     private void validateRoom(Property property, LocalDate checkIn, LocalDate checkOut, int guests, int alreadyConsumed) {
@@ -205,6 +224,53 @@ public class BookingService {
                 .toList();
     }
 
+    /**
+     * Mock payment capture: no real gateway involved yet, this always succeeds. Only
+     * rooms still PENDING get marked PAID (idempotent if called twice); a trip that's
+     * entirely cancelled can't be paid for.
+     */
+    @Transactional
+    public List<BookingDto> payGroup(Long groupId, String guestEmail) {
+        BookingGroup group = findGroup(groupId);
+        if (!guestEmail.equals(group.getGuestEmail())) {
+            throw new ForbiddenException("You can only pay for your own trips");
+        }
+        return recordGroupPaymentInternal(groupId, "Online", null);
+    }
+
+    @Transactional
+    public List<BookingDto> recordGroupPayment(Long groupId, String method, String reference) {
+        findGroup(groupId);
+        return recordGroupPaymentInternal(groupId, method, reference);
+    }
+
+    private List<BookingDto> recordGroupPaymentInternal(Long groupId, String method, String reference) {
+        List<Booking> bookings = bookingRepository.findByBookingGroupId(groupId);
+        if (bookings.stream().allMatch(b -> b.getStatus() == BookingStatus.CANCELLED)) {
+            throw new IllegalArgumentException("Can't record payment for a cancelled trip");
+        }
+        return bookings.stream()
+                .map(b -> {
+                    if (b.getStatus() != BookingStatus.CANCELLED && b.getPaymentStatus() != PaymentStatus.PAID) {
+                        b.markPaid(method, reference);
+                        b = bookingRepository.save(b);
+                    }
+                    return toDto(b, propertyRepository.findById(b.getPropertyId()).orElse(null));
+                })
+                .toList();
+    }
+
+    @Transactional
+    public BookingDto recordPayment(Long bookingId, String method, String reference) {
+        Booking booking = findBooking(bookingId);
+        if (booking.getStatus() == BookingStatus.CANCELLED) {
+            throw new IllegalArgumentException("Can't record payment for a cancelled booking");
+        }
+        booking.markPaid(method, reference);
+        Booking saved = bookingRepository.save(booking);
+        return toDto(saved, propertyRepository.findById(saved.getPropertyId()).orElse(null));
+    }
+
     private BookingGroup findGroup(Long groupId) {
         return bookingGroupRepository.findById(groupId)
                 .orElseThrow(() -> new ResourceNotFoundException("Booking group " + groupId + " not found"));
@@ -253,6 +319,7 @@ public class BookingService {
                 property != null ? property.getHeroImageUrl() : null,
                 b.getGuestEmail(), b.getGuestName(), b.getGuestPhone(),
                 b.getCheckIn(), b.getCheckOut(), b.getGuests(), b.getNotes(), b.getStatus(),
-                b.getBookingGroupId());
+                b.getBookingGroupId(), b.getAmount(), b.getPaymentStatus(), b.getPaymentMethod(),
+                b.getPaymentReference(), b.getChildrenCount(), b.getChildcareFee());
     }
 }

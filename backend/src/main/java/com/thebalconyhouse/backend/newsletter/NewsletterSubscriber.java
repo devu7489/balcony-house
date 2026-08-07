@@ -17,4 +17,5 @@ public class NewsletterSubscriber {
     }
     public Long getId() { return id; }
     public String getEmail() { return email; }
+    public Instant getSubscribedAt() { return subscribedAt; }
 }

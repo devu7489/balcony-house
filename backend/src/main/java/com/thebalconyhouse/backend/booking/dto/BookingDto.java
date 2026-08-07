@@ -1,7 +1,9 @@
 package com.thebalconyhouse.backend.booking.dto;
 
 import com.thebalconyhouse.backend.booking.BookingStatus;
+import com.thebalconyhouse.backend.booking.PaymentStatus;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 
 public record BookingDto(
@@ -17,5 +19,11 @@ public record BookingDto(
         int guests,
         String notes,
         BookingStatus status,
-        Long bookingGroupId
+        Long bookingGroupId,
+        BigDecimal amount,
+        PaymentStatus paymentStatus,
+        String paymentMethod,
+        String paymentReference,
+        int childrenCount,
+        BigDecimal childcareFee
 ) {}

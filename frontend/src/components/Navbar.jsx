@@ -52,6 +52,24 @@ function AccountMenu({ user, logout }) {
               Admin — Bookings
             </NavLink>
           )}
+          {user.isAdmin && (
+            <NavLink
+              to="/admin/messages"
+              onClick={() => setOpen(false)}
+              className="block px-4 py-3 hover:bg-stone/60 text-charcoal/80"
+            >
+              Admin — Messages
+            </NavLink>
+          )}
+          {user.isAdmin && (
+            <NavLink
+              to="/admin/subscribers"
+              onClick={() => setOpen(false)}
+              className="block px-4 py-3 hover:bg-stone/60 text-charcoal/80"
+            >
+              Admin — Subscribers
+            </NavLink>
+          )}
           <button
             onClick={() => { setOpen(false); logout() }}
             className="block w-full text-left px-4 py-3 hover:bg-stone/60 text-charcoal/80 border-t border-stone"
@@ -122,6 +140,16 @@ export default function Navbar() {
                 {user.isAdmin && (
                   <NavLink to="/admin" onClick={() => setOpen(false)} className="block text-charcoal/80 mb-3">
                     Admin — Bookings
+                  </NavLink>
+                )}
+                {user.isAdmin && (
+                  <NavLink to="/admin/messages" onClick={() => setOpen(false)} className="block text-charcoal/80 mb-3">
+                    Admin — Messages
+                  </NavLink>
+                )}
+                {user.isAdmin && (
+                  <NavLink to="/admin/subscribers" onClick={() => setOpen(false)} className="block text-charcoal/80 mb-3">
+                    Admin — Subscribers
                   </NavLink>
                 )}
                 <button onClick={logout} className="text-sm">Log out</button>

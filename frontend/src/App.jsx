@@ -20,6 +20,8 @@ import Checkout from './pages/Checkout'
 import Admin from './pages/Admin'
 import AdminBookingDetail from './pages/AdminBookingDetail'
 import AdminTripDetail from './pages/AdminTripDetail'
+import AdminMessages from './pages/AdminMessages'
+import AdminSubscribers from './pages/AdminSubscribers'
 import CompleteProfile from './pages/CompleteProfile'
 import NotFound from './pages/NotFound'
 
@@ -78,6 +80,22 @@ export default function App() {
               element={
                 <AdminRoute>
                   <AdminTripDetail />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/admin/messages"
+              element={
+                <AdminRoute>
+                  <AdminMessages />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/admin/subscribers"
+              element={
+                <AdminRoute>
+                  <AdminSubscribers />
                 </AdminRoute>
               }
             />

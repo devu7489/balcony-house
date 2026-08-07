@@ -2,6 +2,7 @@ package com.thebalconyhouse.backend.booking;
 
 import com.thebalconyhouse.backend.booking.dto.AdminBookingRequest;
 import com.thebalconyhouse.backend.booking.dto.BookingDto;
+import com.thebalconyhouse.backend.booking.dto.PaymentRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
@@ -50,6 +51,11 @@ public class AdminBookingController {
         return bookingService.cancel(id);
     }
 
+    @PostMapping("/{id}/payment")
+    public BookingDto recordPayment(@PathVariable Long id, @Valid @RequestBody PaymentRequest request) {
+        return bookingService.recordPayment(id, request.method(), request.reference());
+    }
+
     @GetMapping("/group/{groupId}")
     public List<BookingDto> group(@PathVariable Long groupId) {
         return bookingService.findByGroupId(groupId);
@@ -68,5 +74,10 @@ public class AdminBookingController {
     @PostMapping("/group/{groupId}/cancel")
     public List<BookingDto> cancelGroup(@PathVariable Long groupId) {
         return bookingService.cancelGroup(groupId);
+    }
+
+    @PostMapping("/group/{groupId}/payment")
+    public List<BookingDto> recordGroupPayment(@PathVariable Long groupId, @Valid @RequestBody PaymentRequest request) {
+        return bookingService.recordGroupPayment(groupId, request.method(), request.reference());
     }
 }

@@ -3,11 +3,16 @@ import { Link } from 'react-router-dom'
 import apiClient from '../api/axiosClient'
 import LoadingScreen from '../components/LoadingScreen'
 import StatusBadge from '../components/StatusBadge'
+import PaymentBadge from '../components/PaymentBadge'
 import { groupBookings } from '../lib/groupBookings'
 
-const emptyForm = { propertyId: '', guestName: '', guestPhone: '', guestEmail: '', checkIn: '', checkOut: '', guests: 1, notes: '' }
+const emptyForm = {
+  propertyId: '', guestName: '', guestPhone: '', guestEmail: '', checkIn: '', checkOut: '', guests: 1, notes: '',
+  paymentReceived: false, paymentMethod: 'Cash', paymentReference: '', childrenCount: 0,
+}
+const totalAmount = (bookings) => bookings.reduce((sum, b) => sum + Number(b.amount || 0), 0) + Number(bookings[0]?.childcareFee || 0)
 
-function AdminBookingRow({ b, to }) {
+function AdminBookingRow({ b, to, compact = false }) {
   return (
     <Link
       to={to || `/admin/bookings/${b.id}`}
@@ -19,12 +24,24 @@ function AdminBookingRow({ b, to }) {
       />
       <div className="flex-1">
         <h2 className="font-serif text-lg">{b.propertyName || `Room #${b.propertyId}`}</h2>
-        <p className="text-charcoal/70 text-sm">
-          {[b.guestName, b.guestEmail, b.guestPhone].filter(Boolean).join(' · ')}
+        {!compact && (
+          <p className="text-charcoal/70 text-sm">
+            {[b.guestName, b.guestEmail, b.guestPhone].filter(Boolean).join(' · ')}
+          </p>
+        )}
+        <p className="text-charcoal/60 text-sm">
+          {!compact && <>{b.checkIn} &rarr; {b.checkOut} &middot; </>}
+          {b.guests} guest{b.guests === 1 ? '' : 's'}
+          {!compact && b.amount != null && <> &middot; ₹{totalAmount([b]).toLocaleString()}</>}
         </p>
-        <p className="text-charcoal/60 text-sm">{b.checkIn} &rarr; {b.checkOut} &middot; {b.guests} guest{b.guests === 1 ? '' : 's'}</p>
+        {!compact && b.childrenCount > 0 && (
+          <p className="text-charcoal/50 text-xs mt-0.5">Kids Play Zone &middot; {b.childrenCount} child{b.childrenCount === 1 ? '' : 'ren'}</p>
+        )}
       </div>
-      <StatusBadge status={b.status} />
+      <div className="flex flex-col items-end gap-2">
+        <StatusBadge status={b.status} />
+        {!compact && b.status !== 'CANCELLED' && <PaymentBadge status={b.paymentStatus} />}
+      </div>
     </Link>
   )
 }
@@ -41,12 +58,16 @@ export default function Admin() {
   const [checkingAvailability, setCheckingAvailability] = useState(false)
   const [submitStatus, setSubmitStatus] = useState('idle')
   const [submitError, setSubmitError] = useState('')
+  const [childcarePricing, setChildcarePricing] = useState({ pricePerChild: 0, maxChildren: 2 })
 
   const loadBookings = () => apiClient.get('/admin/bookings').then(({ data }) => setBookings(data))
 
   useEffect(() => {
-    Promise.all([loadBookings(), apiClient.get('/properties').then(({ data }) => setProperties(data))])
-      .finally(() => setLoading(false))
+    Promise.all([
+      loadBookings(),
+      apiClient.get('/properties').then(({ data }) => setProperties(data)),
+      apiClient.get('/addons/childcare').then(({ data }) => setChildcarePricing(data)).catch(() => {}),
+    ]).finally(() => setLoading(false))
   }, [])
 
   useEffect(() => {
@@ -77,6 +98,10 @@ export default function Admin() {
         checkOut: form.checkOut,
         guests: Number(form.guests),
         notes: form.notes || null,
+        paymentReceived: form.paymentReceived,
+        paymentMethod: form.paymentReceived ? form.paymentMethod : null,
+        paymentReference: form.paymentReceived ? (form.paymentReference || null) : null,
+        childrenCount: form.childrenCount,
       })
       setSubmitStatus('idle')
       setForm(emptyForm)
@@ -105,12 +130,16 @@ export default function Admin() {
     <div className="max-w-4xl mx-auto px-6 lg:px-10 py-20">
       <div className="flex items-center justify-between mb-12">
         <h1 className="font-serif text-4xl">Admin — Bookings</h1>
-        <button
-          onClick={() => setShowForm((s) => !s)}
-          className="px-6 py-2.5 rounded-full bg-olive text-warmwhite hover:bg-charcoal transition-colors"
-        >
-          {showForm ? 'Cancel' : '+ New phone booking'}
-        </button>
+        <div className="flex items-center gap-4">
+          <Link to="/admin/messages" className="text-sm text-olive hover:underline">Messages &rarr;</Link>
+          <Link to="/admin/subscribers" className="text-sm text-olive hover:underline">Subscribers &rarr;</Link>
+          <button
+            onClick={() => setShowForm((s) => !s)}
+            className="px-6 py-2.5 rounded-full bg-olive text-warmwhite hover:bg-charcoal transition-colors"
+          >
+            {showForm ? 'Cancel' : '+ New phone booking'}
+          </button>
+        </div>
       </div>
 
       {showForm && (
@@ -209,6 +238,68 @@ export default function Admin() {
             />
           </label>
 
+          <div className="border-t border-stone pt-4">
+            <p className="text-sm text-charcoal/70 mb-2">Kids Play Zone <span className="text-charcoal/40">(optional)</span></p>
+            <div className="flex items-center gap-2">
+              {Array.from({ length: childcarePricing.maxChildren + 1 }, (_, n) => n).map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setForm({ ...form, childrenCount: n })}
+                  className={`px-4 py-2 rounded-full text-sm border transition-colors ${
+                    form.childrenCount === n ? 'bg-olive text-warmwhite border-olive' : 'border-stone text-charcoal/70 hover:border-olive'
+                  }`}
+                >
+                  {n === 0 ? 'None' : `${n} child${n === 1 ? '' : 'ren'}`}
+                </button>
+              ))}
+            </div>
+            {form.childrenCount > 0 && (
+              <p className="text-sm text-olive mt-2">
+                + ₹{(childcarePricing.pricePerChild * form.childrenCount).toLocaleString()} flat, whole trip
+              </p>
+            )}
+          </div>
+
+          <div className="border-t border-stone pt-4">
+            <label className="flex items-center gap-2 text-sm text-charcoal/70">
+              <input
+                type="checkbox"
+                checked={form.paymentReceived}
+                onChange={(e) => setForm({ ...form, paymentReceived: e.target.checked })}
+                className="rounded border-stone"
+              />
+              Payment received
+            </label>
+            {form.paymentReceived && (
+              <div className="grid grid-cols-2 gap-3 mt-3">
+                <label className="text-sm text-charcoal/70">
+                  Method
+                  <select
+                    value={form.paymentMethod}
+                    onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })}
+                    className="mt-1 w-full border border-stone rounded-lg px-3 py-2.5 focus:outline-none focus:border-olive bg-white"
+                  >
+                    <option>Cash</option>
+                    <option>UPI</option>
+                    <option>Bank Transfer</option>
+                    <option>Card</option>
+                    <option>Other</option>
+                  </select>
+                </label>
+                <label className="text-sm text-charcoal/70">
+                  Reference <span className="text-charcoal/40">(optional)</span>
+                  <input
+                    placeholder="txn id / notes"
+                    value={form.paymentReference}
+                    onChange={(e) => setForm({ ...form, paymentReference: e.target.value })}
+                    className="mt-1 w-full border border-stone rounded-lg px-3 py-2.5 focus:outline-none focus:border-olive"
+                  />
+                </label>
+              </div>
+            )}
+          </div>
+
           {checkingAvailability && <p className="text-sm text-charcoal/50">Checking availability…</p>}
           {!checkingAvailability && availability?.available === true && (
             <p className="text-sm text-olive">Available — {availability.unitsLeft} room{availability.unitsLeft === 1 ? '' : 's'} left.</p>
@@ -245,17 +336,32 @@ export default function Admin() {
               <AdminBookingRow key={entry.booking.id} b={entry.booking} />
             ) : (
               <div key={entry.bookingGroupId} className="bg-stone/40 border border-stone rounded-xl2 p-4">
-                <div className="flex items-center justify-between mb-3 px-1">
-                  <p className="text-xs uppercase tracking-wide text-charcoal/50">
-                    Trip &middot; {entry.bookings.length} rooms
-                  </p>
-                  <Link to={`/admin/trips/${entry.bookingGroupId}`} className="text-xs text-olive hover:underline">
+                <div className="flex items-start justify-between gap-4 mb-3 px-1">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-charcoal/50 mb-1">
+                      Trip &middot; {entry.bookings.length} rooms
+                    </p>
+                    <p className="text-sm text-charcoal/70">
+                      {[entry.bookings[0].guestName, entry.bookings[0].guestEmail, entry.bookings[0].guestPhone].filter(Boolean).join(' · ')}
+                    </p>
+                    <p className="text-sm text-charcoal/60 mb-2">{entry.bookings[0].checkIn} &rarr; {entry.bookings[0].checkOut}</p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-charcoal/70">₹{totalAmount(entry.bookings).toLocaleString()}</span>
+                      {entry.bookings.some((b) => b.status !== 'CANCELLED') && <PaymentBadge status={entry.bookings[0].paymentStatus} />}
+                    </div>
+                    {entry.bookings[0].childrenCount > 0 && (
+                      <p className="text-xs text-charcoal/50 mt-1">
+                        incl. Kids Play Zone &middot; {entry.bookings[0].childrenCount} child{entry.bookings[0].childrenCount === 1 ? '' : 'ren'}
+                      </p>
+                    )}
+                  </div>
+                  <Link to={`/admin/trips/${entry.bookingGroupId}`} className="text-xs text-olive hover:underline shrink-0">
                     View trip &rarr;
                   </Link>
                 </div>
                 <div className="space-y-3">
                   {entry.bookings.map((b) => (
-                    <AdminBookingRow key={b.id} b={b} to={`/admin/trips/${entry.bookingGroupId}`} />
+                    <AdminBookingRow key={b.id} b={b} to={`/admin/trips/${entry.bookingGroupId}`} compact />
                   ))}
                 </div>
               </div>
