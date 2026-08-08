@@ -48,12 +48,16 @@ public class AdminBookingController {
 
     @PostMapping("/{id}/check-in")
     public BookingDto checkIn(@PathVariable Long id) {
-        return bookingService.checkIn(id);
+        BookingDto dto = bookingService.checkIn(id);
+        bookingEmailService.sendCheckIn(List.of(dto));
+        return dto;
     }
 
     @PostMapping("/{id}/check-out")
     public BookingDto checkOut(@PathVariable Long id) {
-        return bookingService.checkOut(id);
+        BookingDto dto = bookingService.checkOut(id);
+        bookingEmailService.sendCheckoutInvoice(List.of(dto), invoiceService.forBooking(id));
+        return dto;
     }
 
     @PostMapping("/{id}/cancel")
@@ -85,12 +89,16 @@ public class AdminBookingController {
 
     @PostMapping("/group/{groupId}/check-in")
     public List<BookingDto> checkInGroup(@PathVariable Long groupId) {
-        return bookingService.checkInGroup(groupId);
+        List<BookingDto> dtos = bookingService.checkInGroup(groupId);
+        bookingEmailService.sendCheckIn(dtos);
+        return dtos;
     }
 
     @PostMapping("/group/{groupId}/check-out")
     public List<BookingDto> checkOutGroup(@PathVariable Long groupId) {
-        return bookingService.checkOutGroup(groupId);
+        List<BookingDto> dtos = bookingService.checkOutGroup(groupId);
+        bookingEmailService.sendCheckoutInvoice(dtos, invoiceService.forGroup(groupId));
+        return dtos;
     }
 
     @PostMapping("/group/{groupId}/cancel")
