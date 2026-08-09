@@ -13,7 +13,7 @@ public class JournalController {
 
     @GetMapping
     public List<JournalPostDto> all() {
-        return repository.findAll().stream().map(JournalPostDto::summary).toList();
+        return repository.findAllByOrderByPublishedAtDesc().stream().map(JournalPostDto::summary).toList();
     }
 
     @GetMapping("/{slug}")

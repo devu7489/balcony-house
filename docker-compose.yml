@@ -7,9 +7,7 @@ services:
     environment:
       POSTGRES_DB: balconyhouse
       POSTGRES_USER: balconyhouse
-      POSTGRES_PASSWORD: balconyhouse
-    ports:
-      - "5432:5432"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-balconyhouse}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -21,8 +19,6 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    ports:
-      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -42,7 +38,7 @@ services:
       DB_PORT: 5432
       DB_NAME: balconyhouse
       DB_USER: balconyhouse
-      DB_PASSWORD: balconyhouse
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-balconyhouse}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
@@ -50,8 +46,13 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8081}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8081}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
-    ports:
-      - "8080:8080"
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
+      EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-onboarding@resend.dev}
+      DOCUMENTS_STORAGE_PATH: /app/documents
+    volumes:
+      - documents_data:/app/documents
 
   frontend:
     build:
@@ -61,8 +62,15 @@ services:
     restart: unless-stopped
     depends_on:
       - backend
-    ports:
-      - "8081:80"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-http://localhost}
+      FORWARDED_PROTO: ${FORWARDED_PROTO:-http}
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
 
 volumes:
   postgres_data:
+  caddy_data:
+  caddy_config:
+  documents_data:

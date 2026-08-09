@@ -1,5 +1,9 @@
 server:
   port: 8080
+  # Trusts X-Forwarded-Host/-Proto/-Port from the reverse proxy (Caddy) so Spring
+  # computes the OAuth2 redirect_uri from the real public domain, not the internal
+  # container address - works for any domain without hardcoding one anywhere.
+  forward-headers-strategy: framework
   servlet:
     session:
       timeout: ${SESSION_TIMEOUT:30m}
@@ -43,6 +47,14 @@ spring:
     init:
       mode: always
 
+  servlet:
+    multipart:
+      # Slightly above app.documents.max-size-mb so our own validation (which returns a
+      # clean error message) is what rejects an oversized file, not a raw container-level
+      # cutoff with no useful response body.
+      max-file-size: 12MB
+      max-request-size: 12MB
+
   security:
     oauth2:
       client:
@@ -63,6 +75,155 @@ app:
   frontend-url: ${FRONTEND_URL:http://localhost:5173}
   cors:
     allowed-origins: ${CORS_ORIGINS:http://localhost:5173}
+  admin-emails: ${ADMIN_EMAILS:}
+
+  # Everything that makes this deployment "this" hotel rather than another one. Re-skinning
+  # the app for a new client is meant to start and end with editing this block (and swapping
+  # the image files it points at) - see HotelConfig/HotelSeeder for how it's applied.
+  hotel:
+    name: ${HOTEL_NAME:The Balcony House}
+    tagline: ${HOTEL_TAGLINE:Stay a little longer.}
+    # The front desk's local day, not the server's - "today" for check-in/check-out gating
+    # and mid-stay proration must follow wall-clock time at the property, regardless of what
+    # timezone the container/host happens to run in (e.g. UTC in Docker by default).
+    timezone: ${HOTEL_TIMEZONE:Asia/Kolkata}
+    branding:
+      logo-url: ${HOTEL_LOGO_URL:}
+      hero-image-url: ${HOTEL_HERO_IMAGE_URL:/images/hero/balcony-sunrise.png}
+    contact:
+      email: ${HOTEL_CONTACT_EMAIL:hello@thebalconyhouse.com}
+      phone: ${HOTEL_CONTACT_PHONE:+91 00000 00000}
+      address: ${HOTEL_ADDRESS:}
+    # GST on hotel accommodation in India is tiered by per-night room tariff, and the exact
+    # slabs have changed more than once (e.g. the July 2022 removal of the sub-Rs.1000
+    # exemption, then the September 2025 simplification to 5% without ITC for tariff up to
+    # Rs.7,500/night and 18% with ITC above that) - rather than hardcode a rate that can go
+    # stale, it's a plain config value the property owner (or their CA) sets and can update
+    # here at any time, with no code change. rate-percent is the ONLY figure invoices depend
+    # on; everything else here is just what gets printed on the invoice header.
+    gst:
+      enabled: ${HOTEL_GST_ENABLED:true}
+      gstin: ${HOTEL_GSTIN:}
+      legal-name: ${HOTEL_GST_LEGAL_NAME:}
+      state-name: ${HOTEL_GST_STATE_NAME:}
+      hsn-code: ${HOTEL_GST_HSN_CODE:9963}
+      rate-percent: ${HOTEL_GST_RATE_PERCENT:12}
+    addons:
+      childcare-enabled: ${HOTEL_CHILDCARE_ENABLED:true}
+      full-board-enabled: ${HOTEL_FULL_BOARD_ENABLED:true}
+    # Shown to guests on the room page, at checkout, and in the confirmation email - plain
+    # display text, not used anywhere in booking logic (which stays date-only, see
+    # HotelConfig.Policies). Edit freely, no code change needed.
+    policies:
+      check-in-time: "${HOTEL_CHECK_IN_TIME:12:00 PM}"
+      check-out-time: "${HOTEL_CHECK_OUT_TIME:10:00 AM}"
+      notes:
+        - Valid government photo ID required for every guest at check-in.
+        - No smoking inside rooms - a designated outdoor area is available.
+        - Pets are not allowed on the property.
+        - Quiet hours are 10 PM to 7 AM, out of respect for other guests.
+    rooms:
+      - slug: sunrise-room
+        name: The Sunrise Room
+        description: A warm, sunlit room with an oversized private balcony facing the eastern ridge. Perfect for slow mornings and mountain coffee.
+        price-per-night: 3000.00
+        max-guests: 2
+        private-balcony: true
+        workspace-available: true
+        hero-image-url: /images/rooms/sunrise-room.svg
+        total-units: 4
+        highlights:
+          - Private east-facing balcony
+          - Dedicated work desk with high-speed WiFi
+          - Complimentary breakfast every morning
+          - Filter coffee & tea maker in-room
+        photo-urls:
+          - /images/rooms/sunrise-room-1.svg
+          - /images/rooms/sunrise-room-2.svg
+      - slug: pinewood-suite
+        name: The Pinewood Suite
+        description: Spacious suite with wood interiors, a reading nook, and views over the pine valley below.
+        price-per-night: 3500.00
+        max-guests: 3
+        private-balcony: true
+        workspace-available: true
+        hero-image-url: /images/rooms/pinewood-suite.svg
+        total-units: 4
+        highlights:
+          - Reading nook with pine valley views
+          - Dedicated work desk with high-speed WiFi
+          - Complimentary breakfast every morning
+          - Spacious wood-panelled interiors
+        photo-urls:
+          - /images/rooms/pinewood-suite-1.svg
+          - /images/rooms/pinewood-suite-2.svg
+      - slug: mist-cottage
+        name: The Mist Cottage
+        description: A standalone cottage tucked against the tree line, quiet and private, with a fireplace for cool evenings.
+        price-per-night: 4000.00
+        max-guests: 4
+        private-balcony: true
+        workspace-available: false
+        hero-image-url: /images/rooms/mist-cottage.svg
+        total-units: 4
+        highlights:
+          - Private standalone cottage
+          - Fireplace for cool mountain evenings
+          - Complimentary breakfast every morning
+          - Quiet, secluded setting away from the main building
+        photo-urls:
+          - /images/rooms/mist-cottage-1.svg
+          - /images/rooms/mist-cottage-2.svg
+
+  # Base rates live per-property (they genuinely differ per room, see app.hotel.rooms above);
+  # everything here is the shared, tunable math applied on top of those bases.
+  pricing:
+    room:
+      mid-stay-ratio: ${ROOM_MID_STAY_RATIO:0.80}       # 6-10 nights
+      long-stay-ratio: ${ROOM_LONG_STAY_RATIO:0.60}     # 11+ nights
+      peak-season-multiplier: ${ROOM_PEAK_MULTIPLIER:1.5}
+      peak-season-months: ${ROOM_PEAK_MONTHS:4,5,6}     # April-June (kids' summer holidays)
+    childcare:
+      short-stay-rate: ${CHILDCARE_SHORT_STAY_RATE:600}   # per child/day, <=5 nights
+      mid-stay-rate: ${CHILDCARE_MID_STAY_RATE:500}       # per child/day, 6-10 nights
+      long-stay-rate: ${CHILDCARE_LONG_STAY_RATE:400}     # per child/day, 11+ nights
+    full-board:
+      price-per-person-per-day: ${FULL_BOARD_RATE:500}
+
+  # No real payment gateway is wired up yet - "mock" simulates one closely enough to build
+  # and test the real flow against (see payment/MockPaymentGateway): it holds the room,
+  # fails the first payment attempt, and succeeds on retry. Swapping in a real provider
+  # later (e.g. Razorpay) is meant to be just adding that provider's class and changing
+  # this value - BookingService and the checkout retry flow shouldn't need to change.
+  # hold-minutes is how long a booking can sit paid-for-nothing before the cleanup job
+  # releases the room - set it low locally (e.g. 2) to watch that job fire quickly.
+  payment:
+    provider: ${PAYMENT_PROVIDER:mock}
+    hold-minutes: ${PAYMENT_HOLD_MINUTES:30}
+    # Sent once per trip, partway through the hold window (should be well under hold-minutes,
+    # so the guest has real time left to act on it before the room is released).
+    reminder-minutes: ${PAYMENT_REMINDER_MINUTES:15}
+
+  # Where uploaded guest ID documents (Aadhaar/Passport/Driving License/etc., collected at
+  # check-in per Indian hotel registration requirements) are stored. Deliberately a plain
+  # local directory, not the frontend's static/public folder - these are sensitive personal
+  # documents and must only ever be reachable through the authenticated, ROLE_ADMIN-gated
+  # download endpoint (GuestDocumentController), never as a plain static URL. In Docker this
+  # path is a named volume (see docker-compose.yml) so uploads survive container recreation.
+  documents:
+    storage-path: ${DOCUMENTS_STORAGE_PATH:./data/documents}
+    max-size-mb: ${DOCUMENTS_MAX_SIZE_MB:10}
+
+  # Booking confirmation/cancellation emails via Resend's HTTP API (api.resend.com). Off by
+  # default so a fresh checkout of this repo never tries to call an API it has no key for.
+  # from-address must be on a domain verified with Resend, or Resend's shared sandbox address
+  # (onboarding@resend.dev) - the sandbox address only delivers to the Resend account's own
+  # verified email, never to arbitrary guest inboxes, so it's fine for testing the wiring but
+  # not for real guests until a real domain is verified.
+  email:
+    enabled: ${EMAIL_ENABLED:false}
+    resend-api-key: ${RESEND_API_KEY:}
+    from-address: ${EMAIL_FROM_ADDRESS:onboarding@resend.dev}
 
 logging:
   level:

@@ -19,4 +19,8 @@ public class ContactEnquiry {
         this.name = name; this.email = email; this.message = message; this.submittedAt = submittedAt;
     }
     public Long getId() { return id; }
+    public String getName() { return name; }
+    public String getEmail() { return email; }
+    public String getMessage() { return message; }
+    public Instant getSubmittedAt() { return submittedAt; }
 }

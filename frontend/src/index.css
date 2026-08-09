@@ -11,7 +11,7 @@ body {
 }
 
 h1, h2, h3, .font-heading {
-  @apply font-serif;
+  @apply font-serif font-medium tracking-tight;
 }
 
 @keyframes kenburns {
@@ -21,4 +21,8 @@ h1, h2, h3, .font-heading {
 
 .animate-kenburns {
   animation: kenburns 6s ease-out forwards;
+}
+
+.animate-kenburns-hero {
+  animation: kenburns 20s ease-out forwards;
 }
