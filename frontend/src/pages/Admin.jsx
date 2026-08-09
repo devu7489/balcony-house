@@ -9,9 +9,11 @@ import { groupBookings } from '../lib/groupBookings'
 import { useHotelConfig } from '../context/HotelConfigContext'
 import { todayIso, nextDayIso, tomorrowIso } from '../lib/dates'
 
+// Payment is required to confirm any booking now, so this defaults to checked - admin can
+// still uncheck it, but the common case (payment collected on the call) needs no extra click.
 const emptyForm = () => ({
   propertyId: '', guestName: '', guestPhone: '', guestEmail: '', checkIn: todayIso(), checkOut: tomorrowIso(), guests: 1, notes: '',
-  paymentReceived: false, paymentMethod: 'Cash', paymentReference: '', childrenCount: 0,
+  paymentReceived: true, paymentMethod: 'Cash', paymentReference: '', childrenCount: 0,
   fullBoard: false, discountPercent: 0,
 })
 const totalAmount = (bookings) =>
@@ -24,7 +26,7 @@ function AdminBookingRow({ b, to, compact = false }) {
   return (
     <Link
       to={to || `/admin/bookings/${b.id}`}
-      className="flex gap-4 items-center bg-white hover:shadow-lg transition-shadow p-4 rounded-xl2"
+      className="flex gap-4 items-center bg-white border border-stone hover:shadow-lg transition-shadow p-4 rounded-xl2"
     >
       <div
         className="w-20 h-20 rounded-lg bg-stone bg-cover bg-center shrink-0"
@@ -373,6 +375,7 @@ export default function Admin() {
               />
               Payment received
             </label>
+            <p className="text-xs text-charcoal/40 mt-1">Required to confirm the booking.</p>
             {form.paymentReceived && (
               <div className="grid grid-cols-2 gap-3 mt-3">
                 <label className="text-sm text-charcoal/70">

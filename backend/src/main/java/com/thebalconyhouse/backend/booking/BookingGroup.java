@@ -22,6 +22,13 @@ public class BookingGroup {
 
     private Instant createdAt;
 
+    // A trip pays once for the whole group, not once per room - see BookingService.createGroup.
+    // Null until BookingService opens an order via PaymentGateway.createOrder(); paymentAttempts
+    // tracks how many verifyPayment() tries have been made (MockPaymentGateway fails attempt 1,
+    // succeeds attempt 2+, so this needs to persist across the initial attempt and any retry).
+    private String paymentOrderRef;
+    private Integer paymentAttempts;
+
     protected BookingGroup() {}
 
     public BookingGroup(String guestEmail, String guestName, String guestPhone,
@@ -43,4 +50,8 @@ public class BookingGroup {
     public LocalDate getCheckOut() { return checkOut; }
     public String getNotes() { return notes; }
     public Instant getCreatedAt() { return createdAt; }
+    public String getPaymentOrderRef() { return paymentOrderRef; }
+    public void setPaymentOrderRef(String paymentOrderRef) { this.paymentOrderRef = paymentOrderRef; }
+    public int getPaymentAttempts() { return paymentAttempts == null ? 0 : paymentAttempts; }
+    public void setPaymentAttempts(int paymentAttempts) { this.paymentAttempts = paymentAttempts; }
 }

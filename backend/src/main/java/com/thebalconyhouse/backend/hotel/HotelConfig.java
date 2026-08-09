@@ -17,12 +17,19 @@ public record HotelConfig(
         Contact contact,
         Gst gst,
         Addons addons,
+        Policies policies,
         List<RoomCategory> rooms
 ) {
 
     public record Branding(String logoUrl, String heroImageUrl) {}
 
     public record Contact(String email, String phone, String address) {}
+
+    /** Plain display strings, not parsed/used in any date-time logic - check-in/check-out
+     *  are still DATE-only everywhere in the booking flow (see Booking.checkIn/checkOut);
+     *  these are purely what's shown to guests as the property's stated arrival/departure
+     *  times and general house rules. */
+    public record Policies(String checkInTime, String checkOutTime, List<String> notes) {}
 
     /** See this block's own comment in application.yml for why rate-percent is configurable
      *  rather than hardcoded. */
@@ -40,6 +47,7 @@ public record HotelConfig(
             boolean workspaceAvailable,
             String heroImageUrl,
             int totalUnits,
-            List<String> highlights
+            List<String> highlights,
+            List<String> photoUrls
     ) {}
 }

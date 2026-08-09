@@ -6,6 +6,7 @@ import StatusBadge from '../components/StatusBadge'
 import PaymentBadge from '../components/PaymentBadge'
 import { groupBookings } from '../lib/groupBookings'
 import Select from '../components/Select'
+import { cancellationConfirmMessage } from '../lib/cancellationPolicy'
 
 const isCancellable = (status) => status === 'CONFIRMED' || status === 'CHECKED_IN'
 const totalAmount = (bookings) =>
@@ -42,22 +43,24 @@ export default function MyBookings() {
     load().finally(() => setLoading(false))
   }, [])
 
-  const cancelBooking = async (id) => {
-    if (!window.confirm('Cancel this booking? This can\'t be undone.')) return
-    setCancellingKey(id)
+  const cancelBooking = async (b) => {
+    const message = cancellationConfirmMessage(b.checkIn, b.checkOut, false)
+    if (!window.confirm(message)) return
+    setCancellingKey(b.id)
     try {
-      await apiClient.post(`/bookings/${id}/cancel`)
+      await apiClient.post(`/bookings/${b.id}/cancel`)
       await load()
     } finally {
       setCancellingKey(null)
     }
   }
 
-  const cancelTrip = async (groupId) => {
-    if (!window.confirm('Cancel this whole trip? This can\'t be undone.')) return
-    setCancellingKey(groupId)
+  const cancelTrip = async (entry) => {
+    const message = cancellationConfirmMessage(entry.bookings[0].checkIn, entry.bookings[0].checkOut, true)
+    if (!window.confirm(message)) return
+    setCancellingKey(entry.bookingGroupId)
     try {
-      await apiClient.post(`/bookings/group/${groupId}/cancel`)
+      await apiClient.post(`/bookings/group/${entry.bookingGroupId}/cancel`)
       await load()
     } finally {
       setCancellingKey(null)
@@ -98,6 +101,12 @@ export default function MyBookings() {
         )}
       </div>
 
+      {bookings.length > 0 && (
+        <p className="text-xs text-charcoal/40 -mt-8 mb-8">
+          Invoices are emailed to you at booking and again at check-out — check your inbox.
+        </p>
+      )}
+
       {bookings.length === 0 ? (
         <div>
           <p className="text-charcoal/70 mb-6">You haven't booked a stay yet.</p>
@@ -124,14 +133,9 @@ export default function MyBookings() {
                       {!cancelled && <PaymentBadge status={b.paymentStatus} />}
                     </div>
                     <div className="flex items-center gap-4">
-                      {!cancelled && b.paymentStatus === 'PAID' && (
-                        <Link to={`/invoice/booking/${b.id}`} className="text-xs text-olive hover:underline">
-                          View invoice
-                        </Link>
-                      )}
                       {isCancellable(b.status) && (
                         <button
-                          onClick={() => cancelBooking(b.id)}
+                          onClick={() => cancelBooking(b)}
                           disabled={cancellingKey === b.id}
                           className="text-xs text-red-600 hover:underline disabled:opacity-50"
                         >
@@ -176,11 +180,6 @@ export default function MyBookings() {
                     )}
                   </div>
                   <div className="flex items-center gap-4 sm:shrink-0">
-                    {!cancelled && paymentStatus === 'PAID' && (
-                      <Link to={`/invoice/trip/${entry.bookingGroupId}`} className="text-xs text-olive hover:underline">
-                        View invoice
-                      </Link>
-                    )}
                     {!cancelled && paymentStatus !== 'PAID' && (
                       <button
                         onClick={() => payTrip(entry.bookingGroupId)}
@@ -192,7 +191,7 @@ export default function MyBookings() {
                     )}
                     {anyCancellable && (
                       <button
-                        onClick={() => cancelTrip(entry.bookingGroupId)}
+                        onClick={() => cancelTrip(entry)}
                         disabled={cancellingKey === entry.bookingGroupId}
                         className="text-xs text-red-600 hover:underline disabled:opacity-50"
                       >

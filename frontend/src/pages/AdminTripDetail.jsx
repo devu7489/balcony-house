@@ -5,13 +5,17 @@ import LoadingScreen from '../components/LoadingScreen'
 import StatusBadge from '../components/StatusBadge'
 import PaymentBadge from '../components/PaymentBadge'
 import Select from '../components/Select'
+import GuestDocuments from '../components/GuestDocuments'
+import ActivityLog from '../components/ActivityLog'
 import { roomNumberOptions } from '../lib/roomNumbers'
 import { todayIso } from '../lib/dates'
+import { cancellationConfirmMessage } from '../lib/cancellationPolicy'
 
 export default function AdminTripDetail() {
   const { groupId } = useParams()
   const [bookings, setBookings] = useState(null)
   const [properties, setProperties] = useState([])
+  const [docCounts, setDocCounts] = useState({})
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [actionStatus, setActionStatus] = useState('idle')
@@ -128,7 +132,7 @@ export default function AdminTripDetail() {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-6">
         <h1 className="font-serif text-3xl mb-4">This trip doesn't exist.</h1>
-        <Link to="/admin" className="text-olive hover:underline">Back to Admin</Link>
+        <Link to="/admin/bookings" className="text-olive hover:underline">Back to Admin</Link>
       </div>
     )
   }
@@ -140,6 +144,7 @@ export default function AdminTripDetail() {
   const anyConfirmed = bookings.some((b) => b.status === 'CONFIRMED')
   const anyCheckedIn = bookings.some((b) => b.status === 'CHECKED_IN')
   const missingRoomForCheckIn = bookings.some((b) => b.status === 'CONFIRMED' && !b.roomNumber)
+  const missingDocForCheckIn = bookings.some((b) => b.status === 'CONFIRMED' && !docCounts[b.id])
   const tooEarlyForCheckIn = bookings.some((b) => b.status === 'CONFIRMED' && todayIso() < b.checkIn)
   const tooEarlyForCheckOut = bookings.some((b) => b.status === 'CHECKED_IN' && todayIso() < b.checkOut)
   const anyActive = anyConfirmed || anyCheckedIn
@@ -161,7 +166,7 @@ export default function AdminTripDetail() {
 
   return (
     <div className="max-w-3xl mx-auto px-6 lg:px-10 py-20">
-      <Link to="/admin" className="text-sm text-olive hover:underline">&larr; Back to Admin</Link>
+      <Link to="/admin/bookings" className="text-sm text-olive hover:underline">&larr; Back to Admin</Link>
 
       <div className="mt-6 bg-white border border-stone rounded-xl2 p-6">
         <div className="flex items-start justify-between gap-4 mb-4">
@@ -192,6 +197,15 @@ export default function AdminTripDetail() {
           </div>
         )}
 
+        {bookings.every((b) => b.status === 'CANCELLED') && bookings.some((b) => Number(b.cancellationPenaltyAmount) > 0) && (
+          <div className="mb-6 bg-stone/50 border border-stone rounded-lg p-4">
+            <p className="text-xs uppercase tracking-wide text-charcoal/50 mb-1">Cancellation penalty</p>
+            <p className="text-charcoal/80">
+              ₹{bookings.reduce((sum, b) => sum + Number(b.cancellationPenaltyAmount || 0), 0).toLocaleString()} — cancelled within the free-cancellation window.
+            </p>
+          </div>
+        )}
+
         <div className="mb-6 border border-stone rounded-lg p-4">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div className="flex items-center gap-3">
@@ -215,15 +229,21 @@ export default function AdminTripDetail() {
             )}
             {anyActive && paymentStatus !== 'PAID' && amountPaidTotal > 0 && (
               <p className="text-sm text-olive w-full">
-                Already paid ₹{amountPaidTotal.toLocaleString()} &middot; Balance due ₹{balanceDue.toLocaleString()}
+                Already paid ₹{amountPaidTotal.toLocaleString()}
+                {balanceDue > 0 && ` · Balance due ₹${balanceDue.toLocaleString()}`}
+                {balanceDue < 0 && ` · Refund due ₹${Math.abs(balanceDue).toLocaleString()}`}
               </p>
             )}
             {anyActive && paymentStatus !== 'PAID' && !showPaymentForm && (
               <button
-                onClick={() => { setPaymentAmount(balanceDue > 0 ? String(balanceDue) : ''); setShowPaymentForm(true) }}
+                onClick={() => { setPaymentAmount(balanceDue !== 0 ? String(balanceDue) : ''); setShowPaymentForm(true) }}
                 className="text-sm text-olive hover:underline"
               >
-                {amountPaidTotal > 0 ? `Record remaining ₹${balanceDue.toLocaleString()}` : 'Mark as paid'}
+                {balanceDue < 0
+                  ? `Record refund of ₹${Math.abs(balanceDue).toLocaleString()}`
+                  : amountPaidTotal > 0
+                    ? `Record remaining ₹${balanceDue.toLocaleString()}`
+                    : 'Mark as paid'}
               </button>
             )}
           </div>
@@ -232,18 +252,22 @@ export default function AdminTripDetail() {
             <div className="mt-4 pt-4 border-t border-stone">
               <p className="text-xs uppercase tracking-wide text-charcoal/50 mb-2">Payment history</p>
               <div className="space-y-1.5">
-                {allPayments.map((p) => (
-                  <div key={p.id} className="flex items-center justify-between gap-3 text-sm flex-wrap">
-                    <span className="text-charcoal/80">
-                      ₹{Number(p.amount).toLocaleString()} &middot; {p.method}
-                      {p.reference ? ` (${p.reference})` : ''}
-                      {bookings.length > 1 ? ` — ${p.roomName}` : ''}
-                    </span>
-                    <span className="text-charcoal/50 text-xs">
-                      {new Date(p.paidAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
-                    </span>
-                  </div>
-                ))}
+                {allPayments.map((p) => {
+                  const isRefund = Number(p.amount) < 0
+                  return (
+                    <div key={p.id} className="flex items-center justify-between gap-3 text-sm flex-wrap">
+                      <span className={isRefund ? 'text-red-600' : 'text-charcoal/80'}>
+                        {isRefund ? '−' : ''}₹{Math.abs(Number(p.amount)).toLocaleString()} &middot; {p.method}
+                        {isRefund ? ' · Refund' : ''}
+                        {p.reference ? ` (${p.reference})` : ''}
+                        {bookings.length > 1 ? ` — ${p.roomName}` : ''}
+                      </span>
+                      <span className="text-charcoal/50 text-xs">
+                        {new Date(p.paidAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+                      </span>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )}
@@ -254,13 +278,15 @@ export default function AdminTripDetail() {
                 Amount
                 <input
                   type="number"
-                  min="0"
                   step="0.01"
                   required
                   value={paymentAmount}
                   onChange={(e) => setPaymentAmount(e.target.value)}
                   className="mt-1 w-full border border-stone rounded-lg px-3 py-2.5 focus:outline-none focus:border-olive"
                 />
+                {Number(paymentAmount) < 0 && (
+                  <span className="block text-xs text-red-600 mt-1">Negative amount — this will be recorded as a refund.</span>
+                )}
               </label>
               <label className="text-sm text-charcoal/70">
                 Method
@@ -322,7 +348,7 @@ export default function AdminTripDetail() {
               ? (Number(b.amount || 0) / (nights || 1)) * elapsedNights + upgradeNewPerNight * remainingNights
               : null
             const upgradeDelta = upgradeNewAmount != null ? upgradeNewAmount - Number(b.amount || 0) : null
-            const canChangeRoom = b.status === 'CONFIRMED' || b.status === 'CHECKED_IN'
+            const canChangeRoom = (b.status === 'CONFIRMED' || b.status === 'CHECKED_IN') && !b.roomUpgraded
             return (
               <div key={b.id} className="border border-stone rounded-xl2 p-4 overflow-hidden">
                 <div className="flex gap-4 items-center">
@@ -353,8 +379,19 @@ export default function AdminTripDetail() {
                         Change room
                       </button>
                     )}
+                    {b.roomUpgraded && (b.status === 'CONFIRMED' || b.status === 'CHECKED_IN') && (
+                      <p className="text-xs text-charcoal/40 text-right max-w-[10rem]">
+                        Room already changed once for this stay
+                      </p>
+                    )}
                   </div>
                 </div>
+
+                {b.status !== 'CANCELLED' && (
+                  <div className="mt-4 pt-4 border-t border-stone">
+                    <GuestDocuments bookingId={b.id} onCountChange={(n) => setDocCounts((prev) => ({ ...prev, [b.id]: n }))} />
+                  </div>
+                )}
 
                 {upgradingBookingId === b.id && (
                   <div className="mt-4 pt-4 border-t border-stone">
@@ -413,7 +450,7 @@ export default function AdminTripDetail() {
             <>
               <button
                 onClick={() => runAction('check-in')}
-                disabled={actionStatus === 'running' || missingRoomForCheckIn || tooEarlyForCheckIn}
+                disabled={actionStatus === 'running' || missingRoomForCheckIn || missingDocForCheckIn || tooEarlyForCheckIn}
                 className="px-6 py-2.5 rounded-full bg-olive text-warmwhite hover:bg-charcoal transition-colors disabled:opacity-50"
               >
                 Check-in trip
@@ -421,7 +458,10 @@ export default function AdminTripDetail() {
               {missingRoomForCheckIn && (
                 <p className="text-xs text-charcoal/50">Assign a room number to every room before checking in.</p>
               )}
-              {!missingRoomForCheckIn && tooEarlyForCheckIn && (
+              {!missingRoomForCheckIn && missingDocForCheckIn && (
+                <p className="text-xs text-charcoal/50">Upload a guest ID document for every room before checking in.</p>
+              )}
+              {!missingRoomForCheckIn && !missingDocForCheckIn && tooEarlyForCheckIn && (
                 <p className="text-xs text-charcoal/50">Check-in opens on the scheduled arrival date.</p>
               )}
             </>
@@ -442,16 +482,36 @@ export default function AdminTripDetail() {
           )}
           {anyActive && (
             <button
-              onClick={() => window.confirm('Cancel this whole trip? This can\'t be undone.') && runAction('cancel')}
+              onClick={() => {
+                const message = cancellationConfirmMessage(first.checkIn, first.checkOut, true)
+                if (window.confirm(message)) runAction('cancel')
+              }}
               disabled={actionStatus === 'running'}
               className="px-6 py-2.5 rounded-full border border-red-600 text-red-600 hover:bg-red-600 hover:text-white transition-colors disabled:opacity-50"
             >
               Cancel trip
             </button>
           )}
+          {anyActive && (
+            <button
+              onClick={() => {
+                if (window.confirm("Cancel this whole trip with no refund? Use this only when the rooms and payment are being handled offline. This can't be undone.")) {
+                  runAction('cancel-no-refund')
+                }
+              }}
+              disabled={actionStatus === 'running'}
+              className="px-6 py-2.5 rounded-full text-sm text-charcoal/50 hover:text-red-600 hover:underline transition-colors disabled:opacity-50"
+            >
+              Cancel trip (no refund)
+            </button>
+          )}
         </div>
 
         {actionError && <p className="text-red-600 text-sm mt-4">{actionError}</p>}
+
+        <div className="mt-6">
+          <ActivityLog groupId={groupId} />
+        </div>
       </div>
     </div>
   )

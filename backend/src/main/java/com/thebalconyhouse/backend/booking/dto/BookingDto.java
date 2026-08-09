@@ -44,5 +44,7 @@ public record BookingDto(
         BigDecimal fullBoardFee,
         int discountPercent,
         BigDecimal discountAmount,
-        BigDecimal payableTotal
+        BigDecimal payableTotal,
+        BigDecimal cancellationPenaltyAmount,
+        boolean roomUpgraded
 ) {}

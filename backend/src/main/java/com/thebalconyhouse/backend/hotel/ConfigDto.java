@@ -1,5 +1,7 @@
 package com.thebalconyhouse.backend.hotel;
 
+import java.util.List;
+
 public record ConfigDto(
         String hotelName,
         String tagline,
@@ -9,5 +11,8 @@ public record ConfigDto(
         String contactPhone,
         String address,
         boolean childcareEnabled,
-        boolean fullBoardEnabled
+        boolean fullBoardEnabled,
+        String checkInTime,
+        String checkOutTime,
+        List<String> policyNotes
 ) {}

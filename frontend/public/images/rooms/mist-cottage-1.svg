@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800">
+  <defs>
+    <linearGradient id="fireglow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2B2B29"/>
+      <stop offset="100%" stop-color="#1A1A18"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="800" fill="url(#fireglow)"/>
+  <!-- stone fireplace -->
+  <rect x="220" y="140" width="360" height="500" fill="#6B705C"/>
+  <rect x="270" y="380" width="260" height="260" fill="#2B2B29"/>
+  <!-- fire -->
+  <polygon points="400,560 360,480 400,500 420,440 450,500 460,480 430,560" fill="#D8A15E"/>
+  <polygon points="400,560 380,510 400,520 415,480 435,520 425,510 405,560" fill="#FAF7F2" opacity="0.8"/>
+  <!-- logs -->
+  <rect x="350" y="600" width="100" height="24" rx="10" fill="#8B5E3C"/>
+  <rect x="360" y="580" width="80" height="20" rx="10" fill="#8B5E3C"/>
+  <!-- mantel -->
+  <rect x="220" y="360" width="360" height="24" fill="#8B5E3C"/>
+</svg>

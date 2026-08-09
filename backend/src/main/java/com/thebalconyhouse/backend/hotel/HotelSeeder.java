@@ -32,7 +32,7 @@ public class HotelSeeder implements ApplicationRunner {
 
             property.applyConfig(config.slug(), config.name(), config.description(), config.pricePerNight(),
                     config.maxGuests(), config.privateBalcony(), config.workspaceAvailable(),
-                    config.heroImageUrl(), config.totalUnits(), config.highlights());
+                    config.heroImageUrl(), config.totalUnits(), config.highlights(), config.photoUrls());
 
             propertyRepository.save(property);
         }

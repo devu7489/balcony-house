@@ -28,7 +28,10 @@ public class ConfigController {
                 hotelConfig.contact().phone(),
                 hotelConfig.contact().address(),
                 hotelConfig.addons().childcareEnabled(),
-                hotelConfig.addons().fullBoardEnabled()
+                hotelConfig.addons().fullBoardEnabled(),
+                hotelConfig.policies().checkInTime(),
+                hotelConfig.policies().checkOutTime(),
+                hotelConfig.policies().notes()
         );
     }
 }

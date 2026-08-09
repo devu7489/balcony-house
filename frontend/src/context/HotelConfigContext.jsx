@@ -13,6 +13,9 @@ const defaultConfig = {
   address: '',
   childcareEnabled: true,
   fullBoardEnabled: true,
+  checkInTime: '12:00 PM',
+  checkOutTime: '10:00 AM',
+  policyNotes: [],
 }
 
 const HotelConfigContext = createContext(null)

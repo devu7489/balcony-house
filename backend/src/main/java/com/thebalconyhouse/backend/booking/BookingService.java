@@ -7,11 +7,16 @@ import com.thebalconyhouse.backend.booking.dto.BookingRequest;
 import com.thebalconyhouse.backend.booking.dto.GroupRoomSelection;
 import com.thebalconyhouse.backend.booking.dto.PaymentRecordDto;
 import com.thebalconyhouse.backend.booking.dto.TodayScheduleDto;
+import com.thebalconyhouse.backend.addon.CancellationPolicy;
 import com.thebalconyhouse.backend.addon.ChildcarePricing;
 import com.thebalconyhouse.backend.addon.FullBoardPricing;
 import com.thebalconyhouse.backend.addon.RoomPricing;
 import com.thebalconyhouse.backend.common.ForbiddenException;
 import com.thebalconyhouse.backend.common.ResourceNotFoundException;
+import com.thebalconyhouse.backend.document.GuestDocumentRepository;
+import com.thebalconyhouse.backend.payment.PaymentGateway;
+import com.thebalconyhouse.backend.payment.PaymentOrder;
+import com.thebalconyhouse.backend.payment.PaymentVerificationResult;
 import com.thebalconyhouse.backend.property.Property;
 import com.thebalconyhouse.backend.property.PropertyRepository;
 import com.thebalconyhouse.backend.property.dto.AvailabilityDto;
@@ -37,23 +42,37 @@ public class BookingService {
     private final BookingGroupRepository bookingGroupRepository;
     private final PropertyRepository propertyRepository;
     private final PaymentRepository paymentRepository;
+    private final RoomBlockRepository roomBlockRepository;
+    private final GuestDocumentRepository guestDocumentRepository;
     private final RoomPricing roomPricing;
     private final ChildcarePricing childcarePricing;
     private final FullBoardPricing fullBoardPricing;
+    private final PaymentGateway paymentGateway;
     private final ZoneId hotelZoneId;
+    private final long paymentHoldMinutes;
+    private final long paymentReminderMinutes;
 
     public BookingService(BookingRepository bookingRepository, BookingGroupRepository bookingGroupRepository,
                            PropertyRepository propertyRepository, PaymentRepository paymentRepository,
+                           RoomBlockRepository roomBlockRepository, GuestDocumentRepository guestDocumentRepository,
                            RoomPricing roomPricing, ChildcarePricing childcarePricing, FullBoardPricing fullBoardPricing,
-                           @Value("${app.hotel.timezone}") String hotelTimezone) {
+                           PaymentGateway paymentGateway,
+                           @Value("${app.hotel.timezone}") String hotelTimezone,
+                           @Value("${app.payment.hold-minutes}") long paymentHoldMinutes,
+                           @Value("${app.payment.reminder-minutes}") long paymentReminderMinutes) {
         this.bookingRepository = bookingRepository;
         this.bookingGroupRepository = bookingGroupRepository;
         this.propertyRepository = propertyRepository;
         this.paymentRepository = paymentRepository;
+        this.roomBlockRepository = roomBlockRepository;
+        this.guestDocumentRepository = guestDocumentRepository;
         this.roomPricing = roomPricing;
         this.childcarePricing = childcarePricing;
         this.fullBoardPricing = fullBoardPricing;
+        this.paymentGateway = paymentGateway;
         this.hotelZoneId = ZoneId.of(hotelTimezone);
+        this.paymentHoldMinutes = paymentHoldMinutes;
+        this.paymentReminderMinutes = paymentReminderMinutes;
     }
 
     /**
@@ -75,21 +94,64 @@ public class BookingService {
         return new AvailabilityDto(unitsLeft > 0, Math.max(unitsLeft, 0), price);
     }
 
+    /**
+     * Creates the booking already held (CONFIRMED, PENDING payment - this is what actually
+     * reserves the room, see unitsLeft/countOverlapping) and makes the first payment attempt
+     * inline. Under PaymentGateway's mock implementation the first attempt always fails, so
+     * this typically returns PENDING - the caller (BookingController) surfaces that as a
+     * "payment failed, retry" state; retryPayment() is how the guest tries again. If the
+     * guest never retries, PaymentHoldCleanupScheduler releases the room automatically.
+     */
     @Transactional
     public BookingDto create(BookingRequest request, String guestEmail, String guestName) {
-        return createInternal(request.propertyId(), guestEmail, guestName, request.guestPhone(),
+        BookingDto created = createInternal(request.propertyId(), guestEmail, guestName, request.guestPhone(),
                 request.checkIn(), request.checkOut(), request.guests(), request.notes(), null,
                 PaymentStatus.PENDING, null, null, 0, false, 0, 0);
+        Booking booking = findBooking(created.id());
+        PaymentOrder order = paymentGateway.createOrder(created.payableTotal(), "booking-" + booking.getId());
+        booking.setPaymentOrderRef(order.orderRef());
+        booking.setPaymentAttempts(0);
+        bookingRepository.save(booking);
+        return attemptBookingPaymentInternal(booking);
+    }
+
+    /** Re-attempts payment for a booking still PENDING after create() - see create()'s own comment. */
+    @Transactional
+    public BookingDto retryPayment(Long bookingId, String guestEmail) {
+        Booking booking = findBooking(bookingId);
+        if (!guestEmail.equals(booking.getGuestEmail())) {
+            throw new ForbiddenException("You can only pay for your own bookings");
+        }
+        return attemptBookingPaymentInternal(booking);
+    }
+
+    private BookingDto attemptBookingPaymentInternal(Booking booking) {
+        if (booking.getPaymentStatus() == PaymentStatus.PAID || booking.getStatus() == BookingStatus.CANCELLED) {
+            return toDto(booking, propertyRepository.findById(booking.getPropertyId()).orElse(null));
+        }
+        int attempt = booking.getPaymentAttempts() + 1;
+        booking.setPaymentAttempts(attempt);
+        bookingRepository.save(booking);
+
+        PaymentVerificationResult result = paymentGateway.verifyPayment(booking.getPaymentOrderRef(), attempt);
+        Booking saved = booking;
+        if (result.success()) {
+            saved = recordPaymentInternal(booking, null, "Online", booking.getPaymentOrderRef());
+        }
+        return toDto(saved, propertyRepository.findById(saved.getPropertyId()).orElse(null));
     }
 
     @Transactional
     public BookingDto createForAdmin(AdminBookingRequest request) {
-        PaymentStatus paymentStatus = request.paymentReceived() ? PaymentStatus.PAID : PaymentStatus.PENDING;
-        String paymentMethod = request.paymentReceived() ? request.paymentMethod() : null;
-        String paymentReference = request.paymentReceived() ? request.paymentReference() : null;
+        // Unlike guest self-service, admin bookings involve a real person on the other end of
+        // the phone - so this isn't silently auto-marked paid, it's rejected until the admin
+        // actually confirms payment was collected.
+        if (!request.paymentReceived()) {
+            throw new IllegalArgumentException("Payment must be collected before this booking can be confirmed");
+        }
         return createInternal(request.propertyId(), request.guestEmail(), request.guestName(), request.guestPhone(),
                 request.checkIn(), request.checkOut(), request.guests(), request.notes(), null,
-                paymentStatus, paymentMethod, paymentReference, request.childrenCount(),
+                PaymentStatus.PAID, request.paymentMethod(), request.paymentReference(), request.childrenCount(),
                 request.fullBoard(), request.guests(), request.discountPercent());
     }
 
@@ -120,11 +182,52 @@ public class BookingService {
 
         int totalGuests = request.rooms().stream().mapToInt(GroupRoomSelection::guests).sum();
 
-        return request.rooms().stream()
+        // Every room is held (PENDING) first; the trip pays once as a whole afterward, not
+        // once per room - see the order-opening block below and BookingGroup.paymentOrderRef.
+        List<BookingDto> created = request.rooms().stream()
                 .map(selection -> createInternal(selection.propertyId(), guestEmail, guestName, request.guestPhone(),
                         request.checkIn(), request.checkOut(), selection.guests(), request.notes(), group.getId(),
                         PaymentStatus.PENDING, null, null, request.childrenCount(),
                         request.fullBoard(), totalGuests, 0))
+                .toList();
+
+        BigDecimal totalPayable = created.stream()
+                .map(BookingDto::payableTotal)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        PaymentOrder order = paymentGateway.createOrder(totalPayable, "group-" + group.getId());
+        group.setPaymentOrderRef(order.orderRef());
+        group.setPaymentAttempts(0);
+        bookingGroupRepository.save(group);
+
+        return attemptGroupPaymentInternal(group);
+    }
+
+    /** Re-attempts payment for a trip still PENDING after createGroup() - see its own comment. */
+    @Transactional
+    public List<BookingDto> retryGroupPayment(Long groupId, String guestEmail) {
+        BookingGroup group = findGroup(groupId);
+        if (!guestEmail.equals(group.getGuestEmail())) {
+            throw new ForbiddenException("You can only pay for your own trips");
+        }
+        return attemptGroupPaymentInternal(group);
+    }
+
+    private List<BookingDto> attemptGroupPaymentInternal(BookingGroup group) {
+        List<Booking> bookings = bookingRepository.findByBookingGroupIdOrderByIdAsc(group.getId());
+        boolean anySettleable = bookings.stream()
+                .anyMatch(b -> b.getStatus() != BookingStatus.CANCELLED && b.getPaymentStatus() != PaymentStatus.PAID);
+        if (anySettleable) {
+            int attempt = group.getPaymentAttempts() + 1;
+            group.setPaymentAttempts(attempt);
+            bookingGroupRepository.save(group);
+
+            PaymentVerificationResult result = paymentGateway.verifyPayment(group.getPaymentOrderRef(), attempt);
+            if (result.success()) {
+                recordGroupPaymentInternal(group.getId(), null, "Online", group.getPaymentOrderRef());
+            }
+        }
+        return bookingRepository.findByBookingGroupIdOrderByIdAsc(group.getId()).stream()
+                .map(b -> toDto(b, propertyRepository.findById(b.getPropertyId()).orElse(null)))
                 .toList();
     }
 
@@ -200,6 +303,9 @@ public class BookingService {
         if (booking.getRoomNumber() == null || booking.getRoomNumber().isBlank()) {
             throw new IllegalArgumentException("Assign a room number before checking in");
         }
+        if (!guestDocumentRepository.existsByBookingId(booking.getId())) {
+            throw new IllegalArgumentException("Upload a guest ID document before checking in");
+        }
         if (today().isBefore(booking.getCheckIn())) {
             throw new IllegalArgumentException("Check-in isn't allowed before the scheduled arrival date (" + booking.getCheckIn() + ")");
         }
@@ -211,12 +317,21 @@ public class BookingService {
      * room amount for the new type. If it was already marked PAID, that mark no longer
      * reflects the new total, so it's reset to PENDING - the front desk records a fresh
      * payment for the corrected amount (this app has no partial-payment ledger).
+     *
+     * Only one room-category change is allowed per stay - see Booking.roomUpgraded. If a
+     * second change is genuinely needed, the front desk handles it offline (block the new
+     * room, move the guest, cancel the original booking with BookingService.cancelNoRefund)
+     * rather than the system trying to chain multiple prorated amounts together.
      */
     @Transactional
     public BookingDto upgradeRoom(Long bookingId, Long newPropertyId) {
         Booking booking = findBooking(bookingId);
         if (booking.getStatus() != BookingStatus.CONFIRMED && booking.getStatus() != BookingStatus.CHECKED_IN) {
             throw new IllegalArgumentException("Only confirmed or checked-in bookings can change rooms");
+        }
+        if (booking.isRoomUpgraded()) {
+            throw new IllegalArgumentException(
+                    "This booking's room has already been changed once - only one room change is allowed per stay");
         }
         if (newPropertyId.equals(booking.getPropertyId())) {
             throw new IllegalArgumentException("Already booked in this room type");
@@ -240,6 +355,7 @@ public class BookingService {
         booking.setPropertyId(newProperty.getId());
         booking.setAmount(newAmount);
         booking.setRoomNumber(null);
+        booking.setRoomUpgraded(true);
         if (booking.getPaymentStatus() == PaymentStatus.PAID) {
             // Only flips the status - amountPaid/method/reference are left as-is, so the
             // front desk still sees exactly how much was already collected (see
@@ -300,6 +416,11 @@ public class BookingService {
         if (anyMissingRoom) {
             throw new IllegalArgumentException("Assign a room number to every room before checking in the trip");
         }
+        boolean anyMissingDocument = bookings.stream()
+                .anyMatch(b -> b.getStatus() == BookingStatus.CONFIRMED && !guestDocumentRepository.existsByBookingId(b.getId()));
+        if (anyMissingDocument) {
+            throw new IllegalArgumentException("Upload a guest ID document for every room before checking in the trip");
+        }
         LocalDate today = today();
         boolean anyTooEarly = bookings.stream()
                 .anyMatch(b -> b.getStatus() == BookingStatus.CONFIRMED && today.isBefore(b.getCheckIn()));
@@ -357,24 +478,45 @@ public class BookingService {
 
     private List<BookingDto> cancelGroupInternal(Long groupId) {
         return bookingRepository.findByBookingGroupIdOrderByIdAsc(groupId).stream()
-                .map(b -> b.getStatus() == BookingStatus.CHECKED_OUT
-                        ? toDto(b, propertyRepository.findById(b.getPropertyId()).orElse(null))
-                        : transitionTo(b, BookingStatus.CANCELLED))
+                .map(b -> {
+                    if (b.getStatus() == BookingStatus.CHECKED_OUT) {
+                        return toDto(b, propertyRepository.findById(b.getPropertyId()).orElse(null));
+                    }
+                    applyCancellationPolicy(b);
+                    return transitionTo(b, BookingStatus.CANCELLED);
+                })
                 .toList();
     }
 
     /**
-     * Mock payment capture: no real gateway involved yet, this always succeeds. Only
-     * rooms still PENDING get marked PAID (idempotent if called twice); a trip that's
-     * entirely cancelled can't be paid for.
+     * Admin-only escape hatch for when the normal single-upgrade-per-stay limit
+     * (upgradeRoom) isn't enough - a second room move genuinely needed mid-stay. The front
+     * desk blocks the new room, moves the guest there offline, and cancels this original
+     * booking with no refund recorded through the system (the money already collected covers
+     * the offline arrangement) - everything else about the swap is handled outside the app.
      */
     @Transactional
-    public List<BookingDto> payGroup(Long groupId, String guestEmail) {
-        BookingGroup group = findGroup(groupId);
-        if (!guestEmail.equals(group.getGuestEmail())) {
-            throw new ForbiddenException("You can only pay for your own trips");
+    public BookingDto cancelNoRefund(Long bookingId) {
+        Booking booking = findBooking(bookingId);
+        if (booking.getStatus() == BookingStatus.CHECKED_OUT) {
+            throw new IllegalArgumentException("A completed stay can't be cancelled");
         }
-        return recordGroupPaymentInternal(groupId, null, "Online", null);
+        booking.setCancellationPenaltyAmount(payableTotal(booking));
+        return transitionTo(booking, BookingStatus.CANCELLED);
+    }
+
+    @Transactional
+    public List<BookingDto> cancelGroupNoRefund(Long groupId) {
+        findGroup(groupId);
+        return bookingRepository.findByBookingGroupIdOrderByIdAsc(groupId).stream()
+                .map(b -> {
+                    if (b.getStatus() == BookingStatus.CHECKED_OUT) {
+                        return toDto(b, propertyRepository.findById(b.getPropertyId()).orElse(null));
+                    }
+                    b.setCancellationPenaltyAmount(payableTotal(b));
+                    return transitionTo(b, BookingStatus.CANCELLED);
+                })
+                .toList();
     }
 
     @Transactional
@@ -385,15 +527,28 @@ public class BookingService {
 
     /**
      * amount == null means "pay everything still due, across every unpaid room" (the
-     * original one-click behaviour). An explicit amount is applied room by room, in id
-     * order, until it's used up - so a partial trip payment settles the earliest rooms
-     * first rather than being silently rejected or split evenly.
+     * original one-click behaviour). An explicit positive amount is applied room by room, in
+     * id order, until it's used up - so a partial trip payment settles the earliest rooms
+     * first rather than being silently rejected or split evenly. An explicit negative amount
+     * means a refund - see applyGroupRefund for why that needs its own pass rather than
+     * falling out of the same loop.
      */
     private List<BookingDto> recordGroupPaymentInternal(Long groupId, BigDecimal amount, String method, String reference) {
         List<Booking> bookings = bookingRepository.findByBookingGroupIdOrderByIdAsc(groupId);
         if (bookings.stream().allMatch(b -> b.getStatus() == BookingStatus.CANCELLED)) {
             throw new IllegalArgumentException("Can't record payment for a cancelled trip");
         }
+        if (amount != null && amount.signum() < 0) {
+            applyGroupRefund(bookings, amount, method, reference);
+        } else {
+            applyGroupPayment(bookings, amount, method, reference);
+        }
+        return bookingRepository.findByBookingGroupIdOrderByIdAsc(groupId).stream()
+                .map(b -> toDto(b, propertyRepository.findById(b.getPropertyId()).orElse(null)))
+                .toList();
+    }
+
+    private void applyGroupPayment(List<Booking> bookings, BigDecimal amount, String method, String reference) {
         BigDecimal remaining = amount;
         for (Booking b : bookings) {
             if (b.getStatus() == BookingStatus.CANCELLED || b.getPaymentStatus() == PaymentStatus.PAID) continue;
@@ -406,9 +561,28 @@ public class BookingService {
                 remaining = remaining.subtract(thisPayment);
             }
         }
-        return bookingRepository.findByBookingGroupIdOrderByIdAsc(groupId).stream()
-                .map(b -> toDto(b, propertyRepository.findById(b.getPropertyId()).orElse(null)))
-                .toList();
+    }
+
+    /**
+     * Mirror of applyGroupPayment for money flowing the other way. A room change that lowers
+     * one room's total (e.g. a downgrade) can leave that specific room overpaid - its own
+     * payableTotal minus amountPaid goes negative - while the rest of the trip is unaffected.
+     * The old single loop skipped every booking whose due was <=0 (nothing left to collect)
+     * *and* skipped any non-positive payment amount, so a negative amount matched nothing and
+     * silently did nothing. This applies the refund against whichever room(s) are actually
+     * overpaid, in id order, until the refund amount is used up.
+     */
+    private void applyGroupRefund(List<Booking> bookings, BigDecimal amount, String method, String reference) {
+        BigDecimal remaining = amount;
+        for (Booking b : bookings) {
+            if (remaining.signum() >= 0) break;
+            if (b.getStatus() == BookingStatus.CANCELLED) continue;
+            BigDecimal due = payableTotal(b, isFirstInGroup(b, bookings)).subtract(b.getAmountPaid());
+            if (due.signum() >= 0) continue;
+            BigDecimal thisRefund = remaining.max(due);
+            recordPaymentInternal(b, thisRefund, method, reference);
+            remaining = remaining.subtract(thisRefund);
+        }
     }
 
     @Transactional
@@ -482,11 +656,61 @@ public class BookingService {
                 .orElseThrow(() -> new ResourceNotFoundException("Booking " + bookingId + " not found"));
     }
 
+    /**
+     * Called by PaymentHoldCleanupScheduler. Releases every room still held (CONFIRMED,
+     * PENDING payment) past app.payment.hold-minutes - a guest who abandoned checkout
+     * without ever completing a successful retryPayment()/retryGroupPayment() call. No
+     * cancellation penalty applies (nothing was ever paid). Returns the newly-cancelled
+     * bookings so the caller can send emails / log activity - this service has no email or
+     * activity-log dependency of its own.
+     */
+    @Transactional
+    public List<BookingDto> cancelExpiredHolds() {
+        Instant cutoff = Instant.now().minus(paymentHoldMinutes, ChronoUnit.MINUTES);
+        List<Booking> expired = bookingRepository.findExpiredHolds(cutoff);
+        return expired.stream().map(b -> transitionTo(b, BookingStatus.CANCELLED)).toList();
+    }
+
+    /**
+     * Called by PaymentHoldCleanupScheduler. Finds every held-and-unpaid booking due for a
+     * "complete your payment" nudge (app.payment.reminder-minutes old, not yet reminded),
+     * marks it reminded so it's never sent twice, and hands back the DTOs so the caller can
+     * send the actual email - this service has no email dependency of its own.
+     */
+    @Transactional
+    public List<BookingDto> findAndMarkPaymentReminders() {
+        Instant cutoff = Instant.now().minus(paymentReminderMinutes, ChronoUnit.MINUTES);
+        List<Booking> due = bookingRepository.findDueForPaymentReminder(cutoff);
+        Instant now = Instant.now();
+        due.forEach(b -> b.setPaymentReminderSentAt(now));
+        bookingRepository.saveAll(due);
+        return due.stream().map(b -> toDto(b, propertyRepository.findById(b.getPropertyId()).orElse(null))).toList();
+    }
+
     private BookingDto cancelInternal(Booking booking) {
         if (booking.getStatus() == BookingStatus.CHECKED_OUT) {
             throw new IllegalArgumentException("A completed stay can't be cancelled");
         }
+        applyCancellationPolicy(booking);
         return transitionTo(booking, BookingStatus.CANCELLED);
+    }
+
+    private void applyCancellationPolicy(Booking booking) {
+        long totalNights = ChronoUnit.DAYS.between(booking.getCheckIn(), booking.getCheckOut());
+        List<Booking> siblings = booking.getBookingGroupId() == null
+                ? List.of(booking)
+                : bookingRepository.findByBookingGroupIdOrderByIdAsc(booking.getBookingGroupId());
+        boolean isAddonBearer = booking.getBookingGroupId() == null || isFirstInGroup(booking, siblings);
+        BigDecimal payable = payableTotal(booking, isAddonBearer);
+
+        Property currentProperty = findProperty(booking.getPropertyId());
+        BigDecimal currentPerNightRate = roomPricing.priceForStay(currentProperty, booking.getCheckIn(), totalNights);
+        BigDecimal childcareFee = isAddonBearer ? booking.getChildcareFee() : BigDecimal.ZERO;
+        BigDecimal fullBoardFee = isAddonBearer ? booking.getFullBoardFee() : BigDecimal.ZERO;
+
+        CancellationPolicy.Result result = CancellationPolicy.evaluate(booking.getCheckIn(), today(), totalNights,
+                currentPerNightRate, childcareFee, fullBoardFee, booking.getDiscountPercent(), payable);
+        booking.setCancellationPenaltyAmount(result.penaltyAmount());
     }
 
     private BookingDto transitionTo(Booking booking, BookingStatus status) {
@@ -521,8 +745,9 @@ public class BookingService {
     }
 
     private int unitsLeft(Property property, LocalDate checkIn, LocalDate checkOut) {
-        long overlapping = bookingRepository.countOverlapping(property.getId(), checkIn, checkOut);
-        return property.getTotalUnits() - (int) overlapping;
+        long overlappingBookings = bookingRepository.countOverlapping(property.getId(), checkIn, checkOut);
+        long overlappingBlocks = roomBlockRepository.countOverlapping(property.getId(), checkIn, checkOut);
+        return property.getTotalUnits() - (int) overlappingBookings - (int) overlappingBlocks;
     }
 
     private Property findProperty(Long propertyId) {
@@ -548,7 +773,7 @@ public class BookingService {
                 b.getBookingGroupId(), b.getCreatedAt(), b.getRoomNumber(), b.getAmount(), b.getPaymentStatus(), b.getPaymentMethod(),
                 b.getPaymentReference(), b.getAmountPaid(), paymentDtos, b.getChildrenCount(), b.getChildcareFee(),
                 b.isFullBoard(), b.getFullBoardFee(), b.getDiscountPercent(), b.getDiscountAmount(),
-                payableTotal(b, isAddonBearer));
+                payableTotal(b, isAddonBearer), b.getCancellationPenaltyAmount(), b.isRoomUpgraded());
     }
 
     @Transactional

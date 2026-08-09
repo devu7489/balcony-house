@@ -50,6 +50,9 @@ services:
       EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-onboarding@resend.dev}
+      DOCUMENTS_STORAGE_PATH: /app/documents
+    volumes:
+      - documents_data:/app/documents
 
   frontend:
     build:
@@ -70,3 +73,4 @@ volumes:
   postgres_data:
   caddy_data:
   caddy_config:
+  documents_data:

@@ -1,8 +1,16 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useHotelConfig } from '../context/HotelConfigContext'
+import apiClient from '../api/axiosClient'
 
 export default function Home() {
   const { hotelName, tagline, heroImageUrl } = useHotelConfig()
+  const [testimonials, setTestimonials] = useState([])
+
+  useEffect(() => {
+    apiClient.get('/testimonials/featured').then(({ data }) => setTestimonials(data)).catch(() => {})
+  }, [])
+
   return (
     <div>
       <section className="px-4 md:px-8 pt-4 md:pt-6">
@@ -65,6 +73,25 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      {testimonials.length > 0 && (
+        <section className="max-w-6xl mx-auto px-6 lg:px-10 pt-24 pb-4">
+          <h2 className="text-3xl md:text-4xl mb-3 text-balance text-center">What Our Guests Say</h2>
+          <p className="text-charcoal/70 text-center max-w-2xl mx-auto mb-12">
+            Stories from the balcony, in guests' own words.
+          </p>
+          <div className={`grid gap-6 ${testimonials.length > 1 ? 'md:grid-cols-2' : ''} ${testimonials.length > 2 ? 'lg:grid-cols-3' : ''}`}>
+            {testimonials.map((t) => (
+              <div key={t.id} className="bg-white border border-stone rounded-xl2 p-8 flex flex-col">
+                <p className="text-olive text-sm mb-3">{'★'.repeat(t.rating)}{'☆'.repeat(5 - t.rating)}</p>
+                <p className="text-charcoal/80 leading-relaxed mb-6 flex-1">&ldquo;{t.quote}&rdquo;</p>
+                <p className="text-sm font-medium text-charcoal">{t.guestName}</p>
+                {t.roomStayed && <p className="text-xs text-charcoal/50">{t.roomStayed}</p>}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="max-w-4xl mx-auto px-6 py-24 text-center">
         <h2 className="text-3xl md:text-4xl mb-6 text-balance">Life moves fast. Mountain mornings shouldn't.</h2>

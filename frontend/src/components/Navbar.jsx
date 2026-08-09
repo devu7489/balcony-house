@@ -129,7 +129,7 @@ export default function Navbar() {
                 <button onClick={logout} className="text-sm">Log out</button>
               </>
             ) : (
-              <button onClick={login} className="text-sm px-5 py-2 rounded-full bg-olive text-warmwhite">Sign in</button>
+              <button onClick={login} className="text-sm px-5 py-2 rounded-full bg-olive text-warmwhite hover:bg-charcoal transition-colors">Sign in</button>
             )}
           </div>
         </nav>

@@ -38,15 +38,31 @@ public class BookingController {
     @PostMapping
     public BookingDto create(@Valid @RequestBody BookingRequest request, @AuthenticationPrincipal OAuth2User principal) {
         BookingDto dto = bookingService.create(request, principal.getAttribute("email"), principal.getAttribute("name"));
-        bookingEmailService.sendConfirmation(List.of(dto));
+        // The first payment attempt happens inside create() and typically fails under the
+        // mock gateway (see PaymentGateway) - only send "you're confirmed" once it's actually
+        // paid, not the moment the room is merely held.
+        if (dto.paymentStatus() == PaymentStatus.PAID) {
+            bookingEmailService.sendConfirmation(List.of(dto));
+        }
         return dto;
     }
 
     @PostMapping("/group")
     public List<BookingDto> createGroup(@Valid @RequestBody BookingGroupRequest request, @AuthenticationPrincipal OAuth2User principal) {
         List<BookingDto> dtos = bookingService.createGroup(request, principal.getAttribute("email"), principal.getAttribute("name"));
-        bookingEmailService.sendConfirmation(dtos);
+        if (dtos.stream().allMatch(d -> d.paymentStatus() == PaymentStatus.PAID)) {
+            bookingEmailService.sendConfirmation(dtos);
+        }
         return dtos;
+    }
+
+    @PostMapping("/{id}/pay")
+    public BookingDto pay(@PathVariable Long id, @AuthenticationPrincipal OAuth2User principal) {
+        BookingDto dto = bookingService.retryPayment(id, principal.getAttribute("email"));
+        if (dto.paymentStatus() == PaymentStatus.PAID) {
+            bookingEmailService.sendConfirmation(List.of(dto));
+        }
+        return dto;
     }
 
     @PostMapping("/{id}/cancel")
@@ -64,8 +80,12 @@ public class BookingController {
     }
 
     @PostMapping("/group/{groupId}/pay")
-    public List<BookingDto> pay(@PathVariable Long groupId, @AuthenticationPrincipal OAuth2User principal) {
-        return bookingService.payGroup(groupId, principal.getAttribute("email"));
+    public List<BookingDto> payGroup(@PathVariable Long groupId, @AuthenticationPrincipal OAuth2User principal) {
+        List<BookingDto> dtos = bookingService.retryGroupPayment(groupId, principal.getAttribute("email"));
+        if (dtos.stream().allMatch(d -> d.paymentStatus() == PaymentStatus.PAID)) {
+            bookingEmailService.sendConfirmation(dtos);
+        }
+        return dtos;
     }
 
     @GetMapping("/{id}/invoice")

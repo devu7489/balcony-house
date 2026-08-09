@@ -67,6 +67,24 @@ public class BookingEmailService {
         }
     }
 
+    /**
+     * "You still need to pay" nudge, sent once partway through the hold window (see
+     * PaymentHoldCleanupScheduler). Deliberately links to My Bookings rather than trying to
+     * jump straight into a payment popup from the email - My Bookings already has a working
+     * "Pay now" button for exactly this state, so this is the simplest link that's actually
+     * reliable (no session/cart state to reconstruct from a cold email click).
+     */
+    public void sendPaymentReminder(List<BookingDto> bookings) {
+        try {
+            if (bookings == null || bookings.isEmpty()) return;
+            BookingDto first = bookings.get(0);
+            String subject = hotelConfig.name() + " — Complete Your Payment to Confirm Your Stay";
+            emailService.send(first.guestEmail(), subject, paymentReminderHtml(bookings));
+        } catch (Exception e) {
+            log.warn("Failed to build payment reminder email: {}", e.getMessage());
+        }
+    }
+
     public void sendCheckIn(List<BookingDto> bookings) {
         try {
             List<BookingDto> checkedIn = bookings == null ? List.of() : bookings.stream()
@@ -132,10 +150,32 @@ public class BookingEmailService {
                 + lineItemsTable(rooms.toString(), "Total", money(total))
                 + paymentNote
                 + (isBlank(first.notes()) ? "" : paragraph("<strong>Special request:</strong> " + escape(first.notes())))
+                + sectionHeading("Cancellation policy")
+                + paragraph("Cancel any time before your check-in date for a full refund. Cancelling after "
+                        + "check-in (or not showing up) refunds you for any nights you haven't used yet, day by day.")
                 + ctaButton("Manage your booking", frontendUrl + "/my-bookings")
                 + paragraph("We look forward to hosting you.");
 
         return wrapper("Booking Confirmed", body);
+    }
+
+    private String paymentReminderHtml(List<BookingDto> bookings) {
+        BookingDto first = bookings.get(0);
+        StringBuilder rooms = new StringBuilder();
+        BigDecimal total = BigDecimal.ZERO;
+        for (BookingDto b : bookings) {
+            rooms.append(lineRow(b.propertyName() != null ? b.propertyName() : ("Room #" + b.propertyId()), money(b.payableTotal())));
+            total = total.add(orZero(b.payableTotal()));
+        }
+        String body = greeting(first.guestName())
+                + paragraph("Your rooms at " + escape(hotelConfig.name()) + " for " + friendly(first.checkIn()) + " to "
+                        + friendly(first.checkOut()) + " are still held, but payment hasn't gone through yet.")
+                + sectionHeading("Still held for you")
+                + lineItemsTable(rooms.toString(), "Total due", money(total))
+                + paragraph("Complete payment soon to keep your rooms - they'll be released automatically if payment isn't finished in time.")
+                + ctaButton("Complete payment", frontendUrl + "/my-bookings")
+                + paragraph("If you already tried and it didn't go through, just try again from the link above.");
+        return wrapper("Payment Reminder", body);
     }
 
     private String cancellationHtml(List<BookingDto> bookings) {

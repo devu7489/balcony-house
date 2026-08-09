@@ -107,6 +107,7 @@ public class SecurityConfig {
                         "/api/experiences/**",
                         "/api/cafe/**",
                         "/api/journal/**",
+                        "/api/testimonials/**",
                         "/api/addons/**",
                         "/api/config",
                         "/api/auth/me",

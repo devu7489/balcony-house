@@ -19,8 +19,14 @@ import Contact from './pages/Contact'
 import MyBookings from './pages/MyBookings'
 import Checkout from './pages/Checkout'
 import AdminLayout from './pages/AdminLayout'
+import AdminDashboard from './pages/AdminDashboard'
 import Admin from './pages/Admin'
 import AdminToday from './pages/AdminToday'
+import AdminCalendar from './pages/AdminCalendar'
+import AdminRooms from './pages/AdminRooms'
+import AdminGuests from './pages/AdminGuests'
+import AdminReports from './pages/AdminReports'
+import AdminTestimonials from './pages/AdminTestimonials'
 import AdminBookingDetail from './pages/AdminBookingDetail'
 import AdminTripDetail from './pages/AdminTripDetail'
 import AdminMessages from './pages/AdminMessages'
@@ -88,8 +94,14 @@ export default function App() {
                 </AdminRoute>
               }
             >
-              <Route index element={<Admin />} />
+              <Route index element={<AdminDashboard />} />
+              <Route path="bookings" element={<Admin />} />
               <Route path="today" element={<AdminToday />} />
+              <Route path="calendar" element={<AdminCalendar />} />
+              <Route path="rooms" element={<AdminRooms />} />
+              <Route path="guests" element={<AdminGuests />} />
+              <Route path="reports" element={<AdminReports />} />
+              <Route path="testimonials" element={<AdminTestimonials />} />
               <Route path="messages" element={<AdminMessages />} />
               <Route path="subscribers" element={<AdminSubscribers />} />
             </Route>

@@ -41,11 +41,16 @@ public class Property {
     @Column(name = "highlight")
     private List<String> highlights = new ArrayList<>();
 
+    @ElementCollection
+    @CollectionTable(name = "property_photo_urls", joinColumns = @JoinColumn(name = "property_id"))
+    @Column(name = "photo_url")
+    private List<String> photoUrls = new ArrayList<>();
+
     public Property() {}
 
     public Property(String slug, String name, String description, BigDecimal pricePerNight, int maxGuests,
                      boolean privateBalcony, boolean workspaceAvailable, String heroImageUrl,
-                     int totalUnits, List<String> highlights) {
+                     int totalUnits, List<String> highlights, List<String> photoUrls) {
         this.slug = slug;
         this.name = name;
         this.description = description;
@@ -56,16 +61,17 @@ public class Property {
         this.heroImageUrl = heroImageUrl;
         this.totalUnits = totalUnits;
         this.highlights = highlights;
+        this.photoUrls = photoUrls;
     }
 
     // Applies room-category config on top of this row - used by HotelSeeder to keep
-    // existing rows in sync with app.hotel.rooms on every startup. Mutates the highlights
-    // collection in place (clear+addAll) rather than reassigning it, since on a
+    // existing rows in sync with app.hotel.rooms on every startup. Mutates the highlights/
+    // photoUrls collections in place (clear+addAll) rather than reassigning them, since on a
     // Hibernate-managed entity replacing an @ElementCollection field's reference outright
     // loses dirty-tracking on that collection.
     public void applyConfig(String slug, String name, String description, BigDecimal pricePerNight, int maxGuests,
                              boolean privateBalcony, boolean workspaceAvailable, String heroImageUrl,
-                             int totalUnits, List<String> highlights) {
+                             int totalUnits, List<String> highlights, List<String> photoUrls) {
         this.slug = slug;
         this.name = name;
         this.description = description;
@@ -77,6 +83,8 @@ public class Property {
         this.totalUnits = totalUnits;
         this.highlights.clear();
         this.highlights.addAll(highlights);
+        this.photoUrls.clear();
+        this.photoUrls.addAll(photoUrls);
     }
 
     public Long getId() { return id; }
@@ -90,4 +98,5 @@ public class Property {
     public String getHeroImageUrl() { return heroImageUrl; }
     public int getTotalUnits() { return totalUnits; }
     public List<String> getHighlights() { return highlights; }
+    public List<String> getPhotoUrls() { return photoUrls; }
 }

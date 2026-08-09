@@ -30,6 +30,6 @@ public class PropertyService {
     private PropertyDto toDto(Property p) {
         return new PropertyDto(p.getId(), p.getName(), p.getDescription(), p.getPricePerNight(),
                 p.getMaxGuests(), p.isPrivateBalcony(), p.isWorkspaceAvailable(), p.getHeroImageUrl(),
-                p.getTotalUnits(), List.copyOf(p.getHighlights()));
+                p.getTotalUnits(), List.copyOf(p.getHighlights()), List.copyOf(p.getPhotoUrls()));
     }
 }

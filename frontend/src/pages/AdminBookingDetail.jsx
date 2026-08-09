@@ -5,13 +5,17 @@ import LoadingScreen from '../components/LoadingScreen'
 import StatusBadge from '../components/StatusBadge'
 import PaymentBadge from '../components/PaymentBadge'
 import Select from '../components/Select'
+import GuestDocuments from '../components/GuestDocuments'
+import ActivityLog from '../components/ActivityLog'
 import { roomNumberOptions } from '../lib/roomNumbers'
 import { todayIso } from '../lib/dates'
+import { cancellationConfirmMessage } from '../lib/cancellationPolicy'
 
 export default function AdminBookingDetail() {
   const { id } = useParams()
   const [booking, setBooking] = useState(null)
   const [properties, setProperties] = useState([])
+  const [docCount, setDocCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [actionStatus, setActionStatus] = useState('idle')
@@ -113,7 +117,7 @@ export default function AdminBookingDetail() {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-6">
         <h1 className="font-serif text-3xl mb-4">This booking doesn't exist.</h1>
-        <Link to="/admin" className="text-olive hover:underline">Back to Admin</Link>
+        <Link to="/admin/bookings" className="text-olive hover:underline">Back to Admin</Link>
       </div>
     )
   }
@@ -147,11 +151,11 @@ export default function AdminBookingDetail() {
     ? (Number(booking.amount || 0) / (nights || 1)) * elapsedNights + upgradeNewPerNight * remainingNights
     : null
   const upgradeDelta = upgradeNewAmount != null ? upgradeNewAmount - Number(booking.amount || 0) : null
-  const canChangeRoom = booking.status === 'CONFIRMED' || booking.status === 'CHECKED_IN'
+  const canChangeRoom = (booking.status === 'CONFIRMED' || booking.status === 'CHECKED_IN') && !booking.roomUpgraded
 
   return (
     <div className="max-w-3xl mx-auto px-6 lg:px-10 py-20">
-      <Link to="/admin" className="text-sm text-olive hover:underline">&larr; Back to Admin</Link>
+      <Link to="/admin/bookings" className="text-sm text-olive hover:underline">&larr; Back to Admin</Link>
 
       <div className="mt-6 bg-white border border-stone rounded-xl2 overflow-hidden">
         <div
@@ -205,6 +209,15 @@ export default function AdminBookingDetail() {
             </div>
           )}
 
+          {booking.status === 'CANCELLED' && Number(booking.cancellationPenaltyAmount) > 0 && (
+            <div className="mb-6 bg-stone/50 border border-stone rounded-lg p-4">
+              <p className="text-xs uppercase tracking-wide text-charcoal/50 mb-1">Cancellation penalty</p>
+              <p className="text-charcoal/80">
+                ₹{Number(booking.cancellationPenaltyAmount).toLocaleString()} — cancelled within the free-cancellation window.
+              </p>
+            </div>
+          )}
+
           {booking.status !== 'CANCELLED' && (
             <div className="mb-6 border border-stone rounded-lg p-4">
               <div className="flex items-center justify-between flex-wrap gap-3">
@@ -242,15 +255,21 @@ export default function AdminBookingDetail() {
                 )}
                 {booking.paymentStatus !== 'PAID' && amountPaidSoFar > 0 && (
                   <p className="text-sm text-olive w-full">
-                    Already paid ₹{amountPaidSoFar.toLocaleString()} &middot; Balance due ₹{balanceDue.toLocaleString()}
+                    Already paid ₹{amountPaidSoFar.toLocaleString()}
+                    {balanceDue > 0 && ` · Balance due ₹${balanceDue.toLocaleString()}`}
+                    {balanceDue < 0 && ` · Refund due ₹${Math.abs(balanceDue).toLocaleString()}`}
                   </p>
                 )}
                 {booking.paymentStatus !== 'PAID' && !showPaymentForm && (
                   <button
-                    onClick={() => { setPaymentAmount(balanceDue > 0 ? String(balanceDue) : ''); setShowPaymentForm(true) }}
+                    onClick={() => { setPaymentAmount(balanceDue !== 0 ? String(balanceDue) : ''); setShowPaymentForm(true) }}
                     className="text-sm text-olive hover:underline"
                   >
-                    {amountPaidSoFar > 0 ? `Record remaining ₹${balanceDue.toLocaleString()}` : 'Mark as paid'}
+                    {balanceDue < 0
+                      ? `Record refund of ₹${Math.abs(balanceDue).toLocaleString()}`
+                      : amountPaidSoFar > 0
+                        ? `Record remaining ₹${balanceDue.toLocaleString()}`
+                        : 'Mark as paid'}
                   </button>
                 )}
               </div>
@@ -259,17 +278,21 @@ export default function AdminBookingDetail() {
                 <div className="mt-4 pt-4 border-t border-stone">
                   <p className="text-xs uppercase tracking-wide text-charcoal/50 mb-2">Payment history</p>
                   <div className="space-y-1.5">
-                    {booking.payments.map((p) => (
-                      <div key={p.id} className="flex items-center justify-between gap-3 text-sm flex-wrap">
-                        <span className="text-charcoal/80">
-                          ₹{Number(p.amount).toLocaleString()} &middot; {p.method}
-                          {p.reference ? ` (${p.reference})` : ''}
-                        </span>
-                        <span className="text-charcoal/50 text-xs">
-                          {new Date(p.paidAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
-                        </span>
-                      </div>
-                    ))}
+                    {booking.payments.map((p) => {
+                      const isRefund = Number(p.amount) < 0
+                      return (
+                        <div key={p.id} className="flex items-center justify-between gap-3 text-sm flex-wrap">
+                          <span className={isRefund ? 'text-red-600' : 'text-charcoal/80'}>
+                            {isRefund ? '−' : ''}₹{Math.abs(Number(p.amount)).toLocaleString()} &middot; {p.method}
+                            {isRefund ? ' · Refund' : ''}
+                            {p.reference ? ` (${p.reference})` : ''}
+                          </span>
+                          <span className="text-charcoal/50 text-xs">
+                            {new Date(p.paidAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+                          </span>
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
               )}
@@ -280,13 +303,15 @@ export default function AdminBookingDetail() {
                     Amount
                     <input
                       type="number"
-                      min="0"
                       step="0.01"
                       required
                       value={paymentAmount}
                       onChange={(e) => setPaymentAmount(e.target.value)}
                       className="mt-1 w-full border border-stone rounded-lg px-3 py-2.5 focus:outline-none focus:border-olive"
                     />
+                    {Number(paymentAmount) < 0 && (
+                      <span className="block text-xs text-red-600 mt-1">Negative amount — this will be recorded as a refund.</span>
+                    )}
                   </label>
                   <label className="text-sm text-charcoal/70">
                     Method
@@ -330,6 +355,13 @@ export default function AdminBookingDetail() {
                 </form>
               )}
             </div>
+          )}
+
+          {!booking.bookingGroupId && booking.roomUpgraded && (booking.status === 'CONFIRMED' || booking.status === 'CHECKED_IN') && (
+            <p className="text-xs text-charcoal/50 mb-6">
+              This booking's room has already been changed once — only one room change is allowed per stay.
+              Need a second change? Use "Cancel (no refund)" below and manage the new room offline.
+            </p>
           )}
 
           {!booking.bookingGroupId && canChangeRoom && (
@@ -403,15 +435,22 @@ export default function AdminBookingDetail() {
             </div>
           )}
 
+          {booking.status !== 'CANCELLED' && (
+            <div className="mb-6">
+              <GuestDocuments bookingId={booking.id} onCountChange={setDocCount} />
+            </div>
+          )}
+
           {!booking.bookingGroupId && (
             <div className="flex flex-wrap gap-3 items-center">
               {booking.status === 'CONFIRMED' && (() => {
                 const tooEarly = todayIso() < booking.checkIn
+                const missingDoc = docCount === 0
                 return (
                   <>
                     <button
                       onClick={() => runAction('check-in')}
-                      disabled={actionStatus === 'running' || !booking.roomNumber || tooEarly}
+                      disabled={actionStatus === 'running' || !booking.roomNumber || missingDoc || tooEarly}
                       className="px-6 py-2.5 rounded-full bg-olive text-warmwhite hover:bg-charcoal transition-colors disabled:opacity-50"
                     >
                       Check-in
@@ -419,7 +458,10 @@ export default function AdminBookingDetail() {
                     {!booking.roomNumber && (
                       <p className="text-xs text-charcoal/50">Assign a room number above before checking in.</p>
                     )}
-                    {booking.roomNumber && tooEarly && (
+                    {booking.roomNumber && missingDoc && (
+                      <p className="text-xs text-charcoal/50">Upload a guest ID document above before checking in.</p>
+                    )}
+                    {booking.roomNumber && !missingDoc && tooEarly && (
                       <p className="text-xs text-charcoal/50">Check-in opens on {booking.checkIn}.</p>
                     )}
                   </>
@@ -444,11 +486,27 @@ export default function AdminBookingDetail() {
               })()}
               {(booking.status === 'CONFIRMED' || booking.status === 'CHECKED_IN') && (
                 <button
-                  onClick={() => window.confirm('Cancel this booking? This can\'t be undone.') && runAction('cancel')}
+                  onClick={() => {
+                    const message = cancellationConfirmMessage(booking.checkIn, booking.checkOut, false)
+                    if (window.confirm(message)) runAction('cancel')
+                  }}
                   disabled={actionStatus === 'running'}
                   className="px-6 py-2.5 rounded-full border border-red-600 text-red-600 hover:bg-red-600 hover:text-white transition-colors disabled:opacity-50"
                 >
                   Cancel booking
+                </button>
+              )}
+              {(booking.status === 'CONFIRMED' || booking.status === 'CHECKED_IN') && (
+                <button
+                  onClick={() => {
+                    if (window.confirm("Cancel this booking with no refund? Use this only when the room and payment are being handled offline (e.g. moved to a different room outside the system). This can't be undone.")) {
+                      runAction('cancel-no-refund')
+                    }
+                  }}
+                  disabled={actionStatus === 'running'}
+                  className="px-6 py-2.5 rounded-full text-sm text-charcoal/50 hover:text-red-600 hover:underline transition-colors disabled:opacity-50"
+                >
+                  Cancel (no refund)
                 </button>
               )}
             </div>
@@ -462,6 +520,10 @@ export default function AdminBookingDetail() {
           )}
 
           {actionError && <p className="text-red-600 text-sm mt-4">{actionError}</p>}
+
+          <div className="mt-6">
+            <ActivityLog bookingId={booking.id} />
+          </div>
         </div>
       </div>
     </div>

@@ -62,6 +62,32 @@ public class Booking {
 
     private BigDecimal discountAmount = BigDecimal.ZERO;
 
+    // Set once, at cancellation time, by BookingService's cancellation-policy check - null
+    // until then. Record-keeping only: there's no payment gateway to auto-charge or
+    // auto-refund, so the front desk still handles the actual money movement (see the
+    // negative-payment refund flow); this just records what the policy said was owed.
+    private BigDecimal cancellationPenaltyAmount;
+
+    // Set true the first time this booking's room CATEGORY is changed via upgradeRoom() -
+    // only one such change is allowed per stay (see BookingService.upgradeRoom for why).
+    // A physical room NUMBER change within the same category (setRoomNumber) is unrelated
+    // and unlimited. Nullable Boolean, not primitive - safe to add to an existing table
+    // under ddl-auto=update; null is treated as "not yet upgraded".
+    private Boolean roomUpgraded;
+
+    // Set for a standalone (non-group) booking only - a grouped trip's order lives on
+    // BookingGroup instead, since payment happens once per trip, not once per room. Null
+    // until BookingService opens an order via PaymentGateway.createOrder(); paymentAttempts
+    // tracks how many verifyPayment() tries have been made so far (see MockPaymentGateway -
+    // attempt 1 always fails, attempt 2+ succeeds, so this needs tracking across requests).
+    private String paymentOrderRef;
+    private Integer paymentAttempts;
+
+    // Set once a "complete your payment" reminder has gone out, so PaymentHoldCleanupScheduler
+    // never sends it twice for the same booking - not reset by anything (there's no concept of
+    // extending a hold in this app).
+    private Instant paymentReminderSentAt;
+
     protected Booking() {}
 
     public Booking(Long propertyId, String guestEmail, String guestName, String guestPhone,
@@ -143,4 +169,14 @@ public class Booking {
         this.discountPercent = discountPercent;
         this.discountAmount = discountAmount;
     }
+    public BigDecimal getCancellationPenaltyAmount() { return cancellationPenaltyAmount; }
+    public void setCancellationPenaltyAmount(BigDecimal cancellationPenaltyAmount) { this.cancellationPenaltyAmount = cancellationPenaltyAmount; }
+    public boolean isRoomUpgraded() { return Boolean.TRUE.equals(roomUpgraded); }
+    public void setRoomUpgraded(boolean roomUpgraded) { this.roomUpgraded = roomUpgraded; }
+    public String getPaymentOrderRef() { return paymentOrderRef; }
+    public void setPaymentOrderRef(String paymentOrderRef) { this.paymentOrderRef = paymentOrderRef; }
+    public int getPaymentAttempts() { return paymentAttempts == null ? 0 : paymentAttempts; }
+    public void setPaymentAttempts(int paymentAttempts) { this.paymentAttempts = paymentAttempts; }
+    public Instant getPaymentReminderSentAt() { return paymentReminderSentAt; }
+    public void setPaymentReminderSentAt(Instant paymentReminderSentAt) { this.paymentReminderSentAt = paymentReminderSentAt; }
 }
