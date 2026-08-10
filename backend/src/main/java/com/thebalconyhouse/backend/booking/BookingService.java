@@ -4,6 +4,7 @@ import com.thebalconyhouse.backend.booking.dto.AdminBookingRequest;
 import com.thebalconyhouse.backend.booking.dto.BookingDto;
 import com.thebalconyhouse.backend.booking.dto.BookingGroupRequest;
 import com.thebalconyhouse.backend.booking.dto.BookingRequest;
+import com.thebalconyhouse.backend.booking.dto.FoodOrderDto;
 import com.thebalconyhouse.backend.booking.dto.GroupRoomSelection;
 import com.thebalconyhouse.backend.booking.dto.PaymentRecordDto;
 import com.thebalconyhouse.backend.booking.dto.TodayScheduleDto;
@@ -11,6 +12,10 @@ import com.thebalconyhouse.backend.addon.CancellationPolicy;
 import com.thebalconyhouse.backend.addon.ChildcarePricing;
 import com.thebalconyhouse.backend.addon.FullBoardPricing;
 import com.thebalconyhouse.backend.addon.RoomPricing;
+import com.thebalconyhouse.backend.cafe.CafeItem;
+import com.thebalconyhouse.backend.cafe.CafeRepository;
+import com.thebalconyhouse.backend.cafe.FoodOrder;
+import com.thebalconyhouse.backend.cafe.FoodOrderRepository;
 import com.thebalconyhouse.backend.common.ForbiddenException;
 import com.thebalconyhouse.backend.common.ResourceNotFoundException;
 import com.thebalconyhouse.backend.document.GuestDocumentRepository;
@@ -44,6 +49,8 @@ public class BookingService {
     private final PaymentRepository paymentRepository;
     private final RoomBlockRepository roomBlockRepository;
     private final GuestDocumentRepository guestDocumentRepository;
+    private final FoodOrderRepository foodOrderRepository;
+    private final CafeRepository cafeRepository;
     private final RoomPricing roomPricing;
     private final ChildcarePricing childcarePricing;
     private final FullBoardPricing fullBoardPricing;
@@ -55,6 +62,7 @@ public class BookingService {
     public BookingService(BookingRepository bookingRepository, BookingGroupRepository bookingGroupRepository,
                            PropertyRepository propertyRepository, PaymentRepository paymentRepository,
                            RoomBlockRepository roomBlockRepository, GuestDocumentRepository guestDocumentRepository,
+                           FoodOrderRepository foodOrderRepository, CafeRepository cafeRepository,
                            RoomPricing roomPricing, ChildcarePricing childcarePricing, FullBoardPricing fullBoardPricing,
                            PaymentGateway paymentGateway,
                            @Value("${app.hotel.timezone}") String hotelTimezone,
@@ -66,6 +74,8 @@ public class BookingService {
         this.paymentRepository = paymentRepository;
         this.roomBlockRepository = roomBlockRepository;
         this.guestDocumentRepository = guestDocumentRepository;
+        this.foodOrderRepository = foodOrderRepository;
+        this.cafeRepository = cafeRepository;
         this.roomPricing = roomPricing;
         this.childcarePricing = childcarePricing;
         this.fullBoardPricing = fullBoardPricing;
@@ -240,10 +250,17 @@ public class BookingService {
 
         long nights = ChronoUnit.DAYS.between(checkIn, checkOut);
         BigDecimal amount = computeAmount(property, checkIn, nights);
-        BigDecimal childcareFee = childcarePricing.totalPerChild(nights).multiply(BigDecimal.valueOf(childrenCount));
-        BigDecimal fullBoardFee = fullBoard
-                ? fullBoardPricing.getPricePerPersonPerDay().multiply(BigDecimal.valueOf(totalGuestsForFullBoard)).multiply(BigDecimal.valueOf(nights))
-                : BigDecimal.ZERO;
+        // Guest checkout only ever says "yes/no" + a headcount - session counts default to
+        // the flat every-day assumption (one childcare session per night, two buffet sessions
+        // - lunch and dinner - per night), reproducing exactly the old flat-rate total. Admin
+        // can later correct these down (or up) to what was actually used - see applyAddons,
+        // which uses this exact same formula so there's only one place fees are computed.
+        int childcareSessions = childrenCount > 0 ? (int) nights : 0;
+        int buffetSessions = fullBoard ? (int) nights * 2 : 0;
+        BigDecimal childcareFee = childcarePricing.perDayRate(nights)
+                .multiply(BigDecimal.valueOf(childcareSessions)).multiply(BigDecimal.valueOf(childrenCount));
+        BigDecimal fullBoardFee = fullBoardPricing.getPricePerSession()
+                .multiply(BigDecimal.valueOf(buffetSessions)).multiply(BigDecimal.valueOf(totalGuestsForFullBoard));
         BigDecimal discountAmount = amount.add(childcareFee).add(fullBoardFee)
                 .multiply(BigDecimal.valueOf(discountPercent)).divide(BigDecimal.valueOf(100));
 
@@ -251,8 +268,8 @@ public class BookingService {
                 checkIn, checkOut, guests, notes, Instant.now());
         booking.setBookingGroupId(bookingGroupId);
         booking.setAmount(amount);
-        booking.setChildcare(childrenCount, childcareFee);
-        booking.setFullBoard(fullBoard, fullBoardFee);
+        booking.setChildcare(childrenCount, childcareSessions, childcareFee);
+        booking.setFullBoard(fullBoard, buffetSessions, fullBoardFee);
         booking.setDiscount(discountPercent, discountAmount);
         booking.setInitialPayment(initialPaymentStatus, paymentMethod, paymentReference);
         Booking saved = bookingRepository.save(booking);
@@ -364,6 +381,186 @@ public class BookingService {
         }
         Booking saved = bookingRepository.save(booking);
         return toDto(saved, newProperty);
+    }
+
+    /**
+     * Updates Kids Play Zone / Full Board for a trip after it's already been created (e.g. a
+     * family adds a child mid-stay, or front desk corrects a phone-booking entry). Only the
+     * trip's addon bearer (see payableTotal's own comment) may be targeted directly - editing
+     * any other room in a multi-room trip is rejected with a pointer to the trip page, since
+     * that's the only room whose fee this actually changes. A standalone (non-grouped)
+     * booking is trivially its own bearer, so this never rejects a normal single-room edit.
+     */
+    @Transactional
+    public BookingDto updateAddons(Long bookingId, int childrenCount, int childcareSessions, int buffetSessions) {
+        Booking booking = findBooking(bookingId);
+        requireEditable(booking);
+        List<Booking> siblings = booking.getBookingGroupId() == null
+                ? List.of(booking)
+                : bookingRepository.findByBookingGroupIdOrderByIdAsc(booking.getBookingGroupId());
+        if (!isFirstInGroup(booking, siblings)) {
+            throw new IllegalArgumentException(
+                    "Kids Play Zone / Full Board is billed to the first room in this trip - edit it from the trip page");
+        }
+        applyAddons(booking, siblings, childrenCount, childcareSessions, buffetSessions);
+        Booking saved = bookingRepository.save(booking);
+        siblings.stream().filter(s -> !s.getId().equals(booking.getId())).forEach(bookingRepository::save);
+        return toDto(saved, propertyRepository.findById(saved.getPropertyId()).orElse(null));
+    }
+
+    /** Trip-level entry point for updateAddons - always resolves to the trip's own addon bearer. */
+    @Transactional
+    public List<BookingDto> updateGroupAddons(Long groupId, int childrenCount, int childcareSessions, int buffetSessions) {
+        Booking bearer = findGroupBearer(groupId);
+        updateAddons(bearer.getId(), childrenCount, childcareSessions, buffetSessions);
+        return findByGroupId(groupId);
+    }
+
+    /**
+     * Same fee formula createInternal uses at booking time - childcareFee = perDayRate(nights)
+     * (a tier picked by total stay length) x childcareSessions x childrenCount; fullBoardFee =
+     * pricePerSession x buffetSessions x the trip's guest count. Sessions are the actual fee
+     * driver here, not childrenCount/fullBoard - front desk corrects the session counts to
+     * what was really used (buffet servings, Kids Play Zone day-slots), not an all-or-nothing
+     * flag.
+     */
+    private void applyAddons(Booking bearer, List<Booking> siblings, int childrenCount, int childcareSessions, int buffetSessions) {
+        int maxChildren = siblings.size() * ChildcarePricing.MAX_CHILDREN_PER_ROOM;
+        if (childrenCount > maxChildren) {
+            throw new IllegalArgumentException(
+                    "Up to " + ChildcarePricing.MAX_CHILDREN_PER_ROOM + " kids per room - "
+                            + maxChildren + " max for " + siblings.size() + " room(s)");
+        }
+        long nights = ChronoUnit.DAYS.between(bearer.getCheckIn(), bearer.getCheckOut());
+        BigDecimal childcareFee = childcarePricing.perDayRate(nights)
+                .multiply(BigDecimal.valueOf(childcareSessions)).multiply(BigDecimal.valueOf(childrenCount));
+        // Cancelled rooms in the trip no longer hold a guest, so they don't count toward the
+        // full-board headcount - mirrors createGroup's totalGuests, computed fresh here since
+        // a room may have been cancelled since the trip was first created.
+        int totalGuestsForFullBoard = siblings.stream()
+                .filter(s -> s.getStatus() != BookingStatus.CANCELLED)
+                .mapToInt(Booking::getGuests).sum();
+        BigDecimal fullBoardFee = fullBoardPricing.getPricePerSession()
+                .multiply(BigDecimal.valueOf(buffetSessions)).multiply(BigDecimal.valueOf(totalGuestsForFullBoard));
+        boolean fullBoard = buffetSessions > 0;
+        // Discount stays a percentage of room + childcare + full board, same base createInternal
+        // originally computed it against - food orders are billed on top, not discounted.
+        BigDecimal newDiscountAmount = bearer.getAmount().add(childcareFee).add(fullBoardFee)
+                .multiply(BigDecimal.valueOf(bearer.getDiscountPercent())).divide(BigDecimal.valueOf(100));
+
+        bearer.setChildcare(childrenCount, childcareSessions, childcareFee);
+        bearer.setFullBoard(fullBoard, buffetSessions, fullBoardFee);
+        bearer.setDiscount(bearer.getDiscountPercent(), newDiscountAmount);
+        reevaluatePaymentStatus(bearer);
+
+        for (Booking sibling : siblings) {
+            if (sibling.getId().equals(bearer.getId())) continue;
+            sibling.setChildcare(childrenCount, childcareSessions, childcareFee);
+            sibling.setFullBoard(fullBoard, buffetSessions, fullBoardFee);
+        }
+    }
+
+    /**
+     * Logs one in-room-dining line item against a trip, always billed to the addon bearer
+     * regardless of which room in the trip the admin was looking at (unlike updateAddons,
+     * there's no ambiguity about "whose fee" this is - it's simply the trip's). Price is
+     * snapshotted from the café menu at this moment (see FoodOrder's own comment), so a later
+     * menu price change never rewrites what a past order actually cost.
+     */
+    @Transactional
+    public BookingDto addFoodOrder(Long bookingId, Long cafeItemId, int quantity) {
+        Booking booking = findBooking(bookingId);
+        requireEditable(booking);
+        Booking bearer = resolveAddonBearer(booking);
+        CafeItem item = cafeRepository.findById(cafeItemId)
+                .orElseThrow(() -> new ResourceNotFoundException("Menu item " + cafeItemId + " not found"));
+        foodOrderRepository.save(new FoodOrder(bearer.getId(), bearer.getBookingGroupId(), item.getId(),
+                item.getName(), item.getPrice(), quantity, Instant.now()));
+        recomputeFoodOrdersFee(bearer);
+        reevaluatePaymentStatus(bearer);
+        bookingRepository.save(bearer);
+        Booking result = bearer.getId().equals(booking.getId()) ? bearer : booking;
+        return toDto(result, propertyRepository.findById(result.getPropertyId()).orElse(null));
+    }
+
+    /** Trip-level entry point for addFoodOrder - always resolves to the trip's own addon bearer. */
+    @Transactional
+    public List<BookingDto> addGroupFoodOrder(Long groupId, Long cafeItemId, int quantity) {
+        Booking bearer = findGroupBearer(groupId);
+        addFoodOrder(bearer.getId(), cafeItemId, quantity);
+        return findByGroupId(groupId);
+    }
+
+    /**
+     * Soft-voids a previously logged order line rather than deleting it, so there's always an
+     * audit trail of what was ordered and then removed (mirrors how cancellations/refunds
+     * elsewhere are status flips or negative rows, never deletions).
+     */
+    @Transactional
+    public BookingDto removeFoodOrder(Long bookingId, Long orderId) {
+        Booking booking = findBooking(bookingId);
+        requireEditable(booking);
+        Booking bearer = resolveAddonBearer(booking);
+        FoodOrder order = foodOrderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order " + orderId + " not found"));
+        if (!order.getBookingId().equals(bearer.getId())) {
+            throw new IllegalArgumentException("This order doesn't belong to this trip");
+        }
+        order.setVoided(true);
+        foodOrderRepository.save(order);
+        recomputeFoodOrdersFee(bearer);
+        reevaluatePaymentStatus(bearer);
+        bookingRepository.save(bearer);
+        Booking result = bearer.getId().equals(booking.getId()) ? bearer : booking;
+        return toDto(result, propertyRepository.findById(result.getPropertyId()).orElse(null));
+    }
+
+    /** Trip-level entry point for removeFoodOrder - always resolves to the trip's own addon bearer. */
+    @Transactional
+    public List<BookingDto> removeGroupFoodOrder(Long groupId, Long orderId) {
+        Booking bearer = findGroupBearer(groupId);
+        removeFoodOrder(bearer.getId(), orderId);
+        return findByGroupId(groupId);
+    }
+
+    private void recomputeFoodOrdersFee(Booking bearer) {
+        BigDecimal total = foodOrderRepository.findByBookingIdAndVoidedFalseOrderByOrderedAtAsc(bearer.getId()).stream()
+                .map(FoodOrder::getLineTotal)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        bearer.setFoodOrdersFee(total);
+    }
+
+    /** Only PAID -> PENDING, and only if the new total genuinely exceeds what's already been
+     *  collected - a reduction (e.g. an order removed) leaves an already-PAID trip alone. */
+    private void reevaluatePaymentStatus(Booking bearer) {
+        if (bearer.getPaymentStatus() == PaymentStatus.PAID
+                && bearer.getFullTotal().compareTo(bearer.getAmountPaid()) > 0) {
+            bearer.setPaymentStatus(PaymentStatus.PENDING);
+        }
+    }
+
+    private void requireEditable(Booking booking) {
+        if (booking.getStatus() != BookingStatus.CONFIRMED && booking.getStatus() != BookingStatus.CHECKED_IN) {
+            throw new IllegalArgumentException("Only confirmed or checked-in bookings can be edited");
+        }
+    }
+
+    /** The booking that actually carries a trip's shared addon/food fees - itself for a
+     *  standalone booking, or the trip's first room (by id) for a grouped one. */
+    private Booking resolveAddonBearer(Booking booking) {
+        if (booking.getBookingGroupId() == null) return booking;
+        List<Booking> siblings = bookingRepository.findByBookingGroupIdOrderByIdAsc(booking.getBookingGroupId());
+        Booking first = siblings.get(0);
+        return first.getId().equals(booking.getId()) ? booking : first;
+    }
+
+    private Booking findGroupBearer(Long groupId) {
+        findGroup(groupId);
+        List<Booking> siblings = bookingRepository.findByBookingGroupIdOrderByIdAsc(groupId);
+        if (siblings.isEmpty()) {
+            throw new IllegalArgumentException("This trip has no rooms");
+        }
+        return siblings.get(0);
     }
 
     @Transactional
@@ -726,6 +923,8 @@ public class BookingService {
         List<Long> bookingIds = bookings.stream().map(Booking::getId).toList();
         Map<Long, List<Payment>> paymentsByBooking = paymentRepository.findByBookingIdInOrderByPaidAtAsc(bookingIds).stream()
                 .collect(java.util.stream.Collectors.groupingBy(Payment::getBookingId));
+        Map<Long, List<FoodOrder>> foodOrdersByBooking = foodOrderRepository.findByBookingIdInAndVoidedFalseOrderByOrderedAtAsc(bookingIds).stream()
+                .collect(java.util.stream.Collectors.groupingBy(FoodOrder::getBookingId));
         // Every sibling of any group present here is guaranteed to also be present in
         // `bookings` (findAll/findMine/findByGroupId all return whole groups, never a
         // partial slice of one), so the addon-bearer can be worked out in memory - no
@@ -739,7 +938,8 @@ public class BookingService {
         return bookings.stream()
                 .map(b -> {
                     boolean isAddonBearer = b.getBookingGroupId() == null || b.getId().equals(firstIdByGroup.get(b.getBookingGroupId()));
-                    return toDto(b, propertiesById.get(b.getPropertyId()), paymentsByBooking.getOrDefault(b.getId(), List.of()), isAddonBearer);
+                    return toDto(b, propertiesById.get(b.getPropertyId()), paymentsByBooking.getOrDefault(b.getId(), List.of()),
+                            foodOrdersByBooking.getOrDefault(b.getId(), List.of()), isAddonBearer);
                 })
                 .toList();
     }
@@ -758,12 +958,16 @@ public class BookingService {
     private BookingDto toDto(Booking b, Property property) {
         boolean isAddonBearer = b.getBookingGroupId() == null
                 || isFirstInGroup(b, bookingRepository.findByBookingGroupIdOrderByIdAsc(b.getBookingGroupId()));
-        return toDto(b, property, paymentRepository.findByBookingIdOrderByPaidAtAsc(b.getId()), isAddonBearer);
+        return toDto(b, property, paymentRepository.findByBookingIdOrderByPaidAtAsc(b.getId()),
+                foodOrderRepository.findByBookingIdAndVoidedFalseOrderByOrderedAtAsc(b.getId()), isAddonBearer);
     }
 
-    private BookingDto toDto(Booking b, Property property, List<Payment> payments, boolean isAddonBearer) {
+    private BookingDto toDto(Booking b, Property property, List<Payment> payments, List<FoodOrder> foodOrders, boolean isAddonBearer) {
         List<PaymentRecordDto> paymentDtos = payments.stream()
                 .map(p -> new PaymentRecordDto(p.getId(), p.getBookingId(), p.getAmount(), p.getMethod(), p.getReference(), p.getPaidAt()))
+                .toList();
+        List<FoodOrderDto> foodOrderDtos = foodOrders.stream()
+                .map(f -> new FoodOrderDto(f.getId(), f.getItemName(), f.getUnitPrice(), f.getQuantity(), f.getLineTotal(), f.getOrderedAt()))
                 .toList();
         return new BookingDto(b.getId(), b.getPropertyId(),
                 property != null ? property.getName() : null,
@@ -771,8 +975,9 @@ public class BookingService {
                 b.getGuestEmail(), b.getGuestName(), b.getGuestPhone(),
                 b.getCheckIn(), b.getCheckOut(), b.getGuests(), b.getNotes(), b.getStatus(),
                 b.getBookingGroupId(), b.getCreatedAt(), b.getRoomNumber(), b.getAmount(), b.getPaymentStatus(), b.getPaymentMethod(),
-                b.getPaymentReference(), b.getAmountPaid(), paymentDtos, b.getChildrenCount(), b.getChildcareFee(),
-                b.isFullBoard(), b.getFullBoardFee(), b.getDiscountPercent(), b.getDiscountAmount(),
+                b.getPaymentReference(), b.getAmountPaid(), paymentDtos, b.getChildrenCount(), b.getChildcareSessions(), b.getChildcareFee(),
+                b.isFullBoard(), b.getBuffetSessions(), b.getFullBoardFee(), b.getDiscountPercent(), b.getDiscountAmount(),
+                b.getFoodOrdersFee(), foodOrderDtos,
                 payableTotal(b, isAddonBearer), b.getCancellationPenaltyAmount(), b.isRoomUpgraded());
     }
 

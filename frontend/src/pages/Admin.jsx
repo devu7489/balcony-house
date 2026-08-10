@@ -231,7 +231,7 @@ export default function Admin() {
                 type="date"
                 value={form.checkIn}
                 onChange={(e) => setForm({ ...form, checkIn: e.target.value, checkOut: nextDayIso(e.target.value) })}
-                className="mt-1 w-full min-w-0 box-border appearance-none bg-white border border-stone rounded-lg px-3 py-3 focus:outline-none focus:border-olive"
+                className="mt-1 w-full min-w-0 h-11 box-border appearance-none bg-white border border-stone rounded-lg px-3 py-3 focus:outline-none focus:border-olive"
               />
             </label>
             <label className="text-sm text-charcoal/70 min-w-0">
@@ -243,7 +243,7 @@ export default function Admin() {
                 disabled={!form.checkIn}
                 value={form.checkOut}
                 onChange={(e) => setForm({ ...form, checkOut: e.target.value })}
-                className="mt-1 w-full min-w-0 box-border appearance-none bg-white border border-stone rounded-lg px-3 py-3 focus:outline-none focus:border-olive disabled:opacity-50"
+                className="mt-1 w-full min-w-0 h-11 box-border appearance-none bg-white border border-stone rounded-lg px-3 py-3 focus:outline-none focus:border-olive disabled:opacity-50"
               />
             </label>
           </div>

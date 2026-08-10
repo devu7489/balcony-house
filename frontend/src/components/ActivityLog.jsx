@@ -13,8 +13,11 @@ const ACTION_LABELS = {
 }
 
 // Shared between AdminBookingDetail.jsx and AdminTripDetail.jsx - fetches its own data so
-// each detail page just drops it in rather than threading loading state through.
-export default function ActivityLog({ bookingId, groupId }) {
+// each detail page just drops it in rather than threading loading state through. The page
+// bumps refreshKey (e.g. on every successful action that reloads the booking/trip) to make
+// this refetch in place - bookingId/groupId alone don't change after an edit, so without
+// this the list would silently go stale until a full page reload.
+export default function ActivityLog({ bookingId, groupId, refreshKey }) {
   const [entries, setEntries] = useState([])
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
@@ -22,7 +25,7 @@ export default function ActivityLog({ bookingId, groupId }) {
   useEffect(() => {
     const url = groupId ? `/admin/bookings/group/${groupId}/activity` : `/admin/bookings/${bookingId}/activity`
     apiClient.get(url).then(({ data }) => setEntries(data)).finally(() => setLoading(false))
-  }, [bookingId, groupId])
+  }, [bookingId, groupId, refreshKey])
 
   if (loading || entries.length === 0) return null
 

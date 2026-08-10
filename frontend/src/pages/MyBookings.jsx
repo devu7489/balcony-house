@@ -7,6 +7,7 @@ import PaymentBadge from '../components/PaymentBadge'
 import { groupBookings } from '../lib/groupBookings'
 import Select from '../components/Select'
 import { cancellationConfirmMessage } from '../lib/cancellationPolicy'
+import ConfirmDialog from '../components/ConfirmDialog'
 
 const isCancellable = (status) => status === 'CONFIRMED' || status === 'CHECKED_IN'
 const totalAmount = (bookings) =>
@@ -36,6 +37,17 @@ export default function MyBookings() {
   const [loading, setLoading] = useState(true)
   const [cancellingKey, setCancellingKey] = useState(null)
   const [sortBy, setSortBy] = useState('bookingTime')
+  const [confirmDialog, setConfirmDialog] = useState(null)
+
+  const askConfirm = (message, onConfirm, opts = {}) => {
+    setConfirmDialog({
+      message,
+      danger: true,
+      confirmLabel: 'Confirm',
+      ...opts,
+      onConfirm: () => { setConfirmDialog(null); onConfirm() },
+    })
+  }
 
   const load = () => apiClient.get('/bookings/mine').then(({ data }) => setBookings(data))
 
@@ -43,28 +55,30 @@ export default function MyBookings() {
     load().finally(() => setLoading(false))
   }, [])
 
-  const cancelBooking = async (b) => {
+  const cancelBooking = (b) => {
     const message = cancellationConfirmMessage(b.checkIn, b.checkOut, false)
-    if (!window.confirm(message)) return
-    setCancellingKey(b.id)
-    try {
-      await apiClient.post(`/bookings/${b.id}/cancel`)
-      await load()
-    } finally {
-      setCancellingKey(null)
-    }
+    askConfirm(message, async () => {
+      setCancellingKey(b.id)
+      try {
+        await apiClient.post(`/bookings/${b.id}/cancel`)
+        await load()
+      } finally {
+        setCancellingKey(null)
+      }
+    })
   }
 
-  const cancelTrip = async (entry) => {
+  const cancelTrip = (entry) => {
     const message = cancellationConfirmMessage(entry.bookings[0].checkIn, entry.bookings[0].checkOut, true)
-    if (!window.confirm(message)) return
-    setCancellingKey(entry.bookingGroupId)
-    try {
-      await apiClient.post(`/bookings/group/${entry.bookingGroupId}/cancel`)
-      await load()
-    } finally {
-      setCancellingKey(null)
-    }
+    askConfirm(message, async () => {
+      setCancellingKey(entry.bookingGroupId)
+      try {
+        await apiClient.post(`/bookings/group/${entry.bookingGroupId}/cancel`)
+        await load()
+      } finally {
+        setCancellingKey(null)
+      }
+    })
   }
 
   const [payingKey, setPayingKey] = useState(null)
@@ -208,6 +222,15 @@ export default function MyBookings() {
           })}
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!confirmDialog}
+        message={confirmDialog?.message}
+        confirmLabel={confirmDialog?.confirmLabel}
+        danger={confirmDialog?.danger}
+        onConfirm={confirmDialog?.onConfirm}
+        onCancel={() => setConfirmDialog(null)}
+      />
     </div>
   )
 }

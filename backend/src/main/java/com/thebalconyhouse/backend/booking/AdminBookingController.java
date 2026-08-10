@@ -1,12 +1,16 @@
 package com.thebalconyhouse.backend.booking;
 
+import com.thebalconyhouse.backend.booking.dto.AddonUpdateRequest;
 import com.thebalconyhouse.backend.booking.dto.AdminBookingRequest;
 import com.thebalconyhouse.backend.booking.dto.BookingActivityDto;
 import com.thebalconyhouse.backend.booking.dto.BookingDto;
+import com.thebalconyhouse.backend.booking.dto.FoodOrderRequest;
 import com.thebalconyhouse.backend.booking.dto.InvoiceDto;
 import com.thebalconyhouse.backend.booking.dto.PaymentRequest;
 import com.thebalconyhouse.backend.booking.dto.RoomNumberRequest;
 import com.thebalconyhouse.backend.booking.dto.RoomUpgradeRequest;
+import com.thebalconyhouse.backend.cafe.CafeItem;
+import com.thebalconyhouse.backend.cafe.CafeRepository;
 import com.thebalconyhouse.backend.notification.BookingEmailService;
 import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -28,15 +32,23 @@ public class AdminBookingController {
     private final BookingEmailService bookingEmailService;
     private final BookingActivityLogService activityLogService;
     private final RoomStatusService roomStatusService;
+    private final CafeRepository cafeRepository;
 
     public AdminBookingController(BookingService bookingService, InvoiceService invoiceService,
                                    BookingEmailService bookingEmailService, BookingActivityLogService activityLogService,
-                                   RoomStatusService roomStatusService) {
+                                   RoomStatusService roomStatusService, CafeRepository cafeRepository) {
         this.bookingService = bookingService;
         this.invoiceService = invoiceService;
         this.bookingEmailService = bookingEmailService;
         this.activityLogService = activityLogService;
         this.roomStatusService = roomStatusService;
+        this.cafeRepository = cafeRepository;
+    }
+
+    /** Just for readable activity-log details - the actual order always snapshots the item
+     *  name/price itself (see FoodOrder), this is only cosmetic for the log entry text. */
+    private String menuItemName(Long cafeItemId) {
+        return cafeRepository.findById(cafeItemId).map(CafeItem::getName).orElse("item");
     }
 
     @GetMapping
@@ -137,6 +149,64 @@ public class AdminBookingController {
         activityLogService.record(dto.id(), dto.bookingGroupId(), "ROOM_CHANGED", email(principal),
                 "From " + before.propertyName() + " to " + dto.propertyName());
         return dto;
+    }
+
+    @PostMapping("/{id}/addons")
+    public BookingDto updateAddons(@PathVariable Long id, @Valid @RequestBody AddonUpdateRequest request,
+                                    @AuthenticationPrincipal OAuth2User principal) {
+        BookingDto dto = bookingService.updateAddons(id, request.childrenCount(), request.childcareSessions(), request.buffetSessions());
+        activityLogService.record(dto.id(), dto.bookingGroupId(), "ADDONS_UPDATED", email(principal), addonsDetails(request));
+        return dto;
+    }
+
+    @PostMapping("/group/{groupId}/addons")
+    public List<BookingDto> updateGroupAddons(@PathVariable Long groupId, @Valid @RequestBody AddonUpdateRequest request,
+                                               @AuthenticationPrincipal OAuth2User principal) {
+        List<BookingDto> dtos = bookingService.updateGroupAddons(groupId, request.childrenCount(), request.childcareSessions(), request.buffetSessions());
+        activityLogService.record(null, groupId, "ADDONS_UPDATED", email(principal), addonsDetails(request));
+        return dtos;
+    }
+
+    private static String addonsDetails(AddonUpdateRequest request) {
+        return "Kids Play Zone: " + request.childrenCount() + " child" + (request.childrenCount() == 1 ? "" : "ren")
+                + ", " + request.childcareSessions() + " session" + (request.childcareSessions() == 1 ? "" : "s")
+                + " · Full Board: " + request.buffetSessions() + " buffet session" + (request.buffetSessions() == 1 ? "" : "s");
+    }
+
+    @PostMapping("/{id}/food-orders")
+    public BookingDto addFoodOrder(@PathVariable Long id, @Valid @RequestBody FoodOrderRequest request,
+                                    @AuthenticationPrincipal OAuth2User principal) {
+        BookingDto dto = bookingService.addFoodOrder(id, request.cafeItemId(), request.quantity());
+        activityLogService.record(dto.id(), dto.bookingGroupId(), "FOOD_ORDER_ADDED", email(principal),
+                request.quantity() + "x " + menuItemName(request.cafeItemId()));
+        return dto;
+    }
+
+    @DeleteMapping("/{id}/food-orders/{orderId}")
+    public BookingDto removeFoodOrder(@PathVariable Long id, @PathVariable Long orderId,
+                                       @AuthenticationPrincipal OAuth2User principal) {
+        BookingDto dto = bookingService.removeFoodOrder(id, orderId);
+        activityLogService.record(dto.id(), dto.bookingGroupId(), "FOOD_ORDER_REMOVED", email(principal),
+                "Order #" + orderId + " removed");
+        return dto;
+    }
+
+    @PostMapping("/group/{groupId}/food-orders")
+    public List<BookingDto> addGroupFoodOrder(@PathVariable Long groupId, @Valid @RequestBody FoodOrderRequest request,
+                                               @AuthenticationPrincipal OAuth2User principal) {
+        List<BookingDto> dtos = bookingService.addGroupFoodOrder(groupId, request.cafeItemId(), request.quantity());
+        activityLogService.record(null, groupId, "FOOD_ORDER_ADDED", email(principal),
+                request.quantity() + "x " + menuItemName(request.cafeItemId()));
+        return dtos;
+    }
+
+    @DeleteMapping("/group/{groupId}/food-orders/{orderId}")
+    public List<BookingDto> removeGroupFoodOrder(@PathVariable Long groupId, @PathVariable Long orderId,
+                                                  @AuthenticationPrincipal OAuth2User principal) {
+        List<BookingDto> dtos = bookingService.removeGroupFoodOrder(groupId, orderId);
+        activityLogService.record(null, groupId, "FOOD_ORDER_REMOVED", email(principal),
+                "Order #" + orderId + " removed");
+        return dtos;
     }
 
     @GetMapping("/group/{groupId}")

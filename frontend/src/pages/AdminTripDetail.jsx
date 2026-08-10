@@ -7,12 +7,15 @@ import PaymentBadge from '../components/PaymentBadge'
 import Select from '../components/Select'
 import GuestDocuments from '../components/GuestDocuments'
 import ActivityLog from '../components/ActivityLog'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { roomNumberOptions } from '../lib/roomNumbers'
 import { todayIso } from '../lib/dates'
 import { cancellationConfirmMessage } from '../lib/cancellationPolicy'
+import { useHotelConfig } from '../context/HotelConfigContext'
 
 export default function AdminTripDetail() {
   const { groupId } = useParams()
+  const { childcareEnabled, fullBoardEnabled } = useHotelConfig()
   const [bookings, setBookings] = useState(null)
   const [properties, setProperties] = useState([])
   const [docCounts, setDocCounts] = useState({})
@@ -30,9 +33,34 @@ export default function AdminTripDetail() {
   const [upgradeStatus, setUpgradeStatus] = useState('idle')
   const [upgradeError, setUpgradeError] = useState('')
   const [roomNumberErrors, setRoomNumberErrors] = useState({})
+  const [showAddons, setShowAddons] = useState(false)
+  const [addonsChildren, setAddonsChildren] = useState(0)
+  const [addonsChildcareSessions, setAddonsChildcareSessions] = useState(0)
+  const [addonsBuffetSessions, setAddonsBuffetSessions] = useState(0)
+  const [addonsStatus, setAddonsStatus] = useState('idle')
+  const [addonsError, setAddonsError] = useState('')
+  const [childcarePricing, setChildcarePricing] = useState({ perDayRate: 0, totalPerChild: 0, maxChildren: 2 })
+  const [fullBoardPricing, setFullBoardPricing] = useState({ pricePerPersonPerDay: 0, pricePerSession: 0 })
+  const [cafeItems, setCafeItems] = useState([])
+  const [orderQuantities, setOrderQuantities] = useState({})
+  const [foodOrderStatus, setFoodOrderStatus] = useState('idle')
+  const [foodOrderError, setFoodOrderError] = useState('')
+  const [showFoodMenu, setShowFoodMenu] = useState(false)
+  const [activityVersion, setActivityVersion] = useState(0)
+  const [confirmDialog, setConfirmDialog] = useState(null)
+
+  const askConfirm = (message, onConfirm, opts = {}) => {
+    setConfirmDialog({
+      message,
+      danger: true,
+      confirmLabel: 'Confirm',
+      ...opts,
+      onConfirm: () => { setConfirmDialog(null); onConfirm() },
+    })
+  }
 
   const load = () => apiClient.get(`/admin/bookings/group/${groupId}`)
-    .then(({ data }) => setBookings(data))
+    .then(({ data }) => { setBookings(data); setActivityVersion((v) => v + 1) })
     .catch(() => setNotFound(true))
 
   useEffect(() => {
@@ -42,6 +70,22 @@ export default function AdminTripDetail() {
   useEffect(() => {
     apiClient.get('/properties').then(({ data }) => setProperties(data)).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    apiClient.get('/cafe').then(({ data }) => setCafeItems(data)).catch(() => {})
+    apiClient.get('/addons/fullboard').then(({ data }) => setFullBoardPricing(data)).catch(() => {})
+  }, [])
+
+  const first0 = bookings?.[0]
+  const nightsForAddons = first0?.checkIn && first0?.checkOut
+    ? Math.round((new Date(first0.checkOut) - new Date(first0.checkIn)) / 86400000)
+    : 0
+
+  useEffect(() => {
+    if (!showAddons || nightsForAddons <= 0) return
+    apiClient.get('/addons/childcare', { params: { nights: nightsForAddons } })
+      .then(({ data }) => setChildcarePricing(data)).catch(() => {})
+  }, [showAddons, nightsForAddons])
 
   useEffect(() => {
     if (!upgradePropertyId || !upgradingBookingId || !bookings) { setUpgradePreview(null); return }
@@ -77,6 +121,51 @@ export default function AdminTripDetail() {
       setUpgradeError(err.response?.data?.message || 'Something went wrong, please try again.')
     } finally {
       setUpgradeStatus('idle')
+    }
+  }
+
+  const saveAddons = async () => {
+    setAddonsStatus('running')
+    setAddonsError('')
+    try {
+      await apiClient.post(`/admin/bookings/group/${groupId}/addons`, {
+        childrenCount: addonsChildren,
+        childcareSessions: addonsChildcareSessions,
+        buffetSessions: addonsBuffetSessions,
+      })
+      setShowAddons(false)
+      await load()
+    } catch (err) {
+      setAddonsError(err.response?.data?.message || 'Something went wrong, please try again.')
+    } finally {
+      setAddonsStatus('idle')
+    }
+  }
+
+  const addFoodOrder = async (cafeItemId) => {
+    const quantity = orderQuantities[cafeItemId] || 1
+    setFoodOrderStatus('running')
+    setFoodOrderError('')
+    try {
+      await apiClient.post(`/admin/bookings/group/${groupId}/food-orders`, { cafeItemId, quantity })
+      await load()
+    } catch (err) {
+      setFoodOrderError(err.response?.data?.message || 'Something went wrong, please try again.')
+    } finally {
+      setFoodOrderStatus('idle')
+    }
+  }
+
+  const removeFoodOrder = async (orderId) => {
+    setFoodOrderStatus('running')
+    setFoodOrderError('')
+    try {
+      await apiClient.delete(`/admin/bookings/group/${groupId}/food-orders/${orderId}`)
+      await load()
+    } catch (err) {
+      setFoodOrderError(err.response?.data?.message || 'Something went wrong, please try again.')
+    } finally {
+      setFoodOrderStatus('idle')
     }
   }
 
@@ -151,6 +240,7 @@ export default function AdminTripDetail() {
   const totalAmount = bookings.reduce((sum, b) => sum + Number(b.amount || 0), 0)
     + Number(first.childcareFee || 0)
     + Number(first.fullBoardFee || 0)
+    + Number(first.foodOrdersFee || 0)
   const amountPaidTotal = bookings.reduce((sum, b) => sum + Number(b.amountPaid || 0), 0)
   const balanceDue = totalAmount - amountPaidTotal
   // Every active room must be individually PAID for the trip to be settled - a room
@@ -331,6 +421,214 @@ export default function AdminTripDetail() {
           )}
         </div>
 
+        {anyActive && (
+          <div className="mb-6 border border-stone rounded-lg p-4">
+            <h2 className="text-sm font-medium text-charcoal/80 mb-3">Extras</h2>
+
+            {(childcareEnabled || fullBoardEnabled) && (() => {
+              const activeGuestCount = bookings.filter((b) => b.status !== 'CANCELLED').reduce((sum, b) => sum + b.guests, 0)
+              return (
+                <div className={showFoodMenu ? '' : 'pb-4'}>
+                  {!showAddons ? (
+                    <div className="flex items-center justify-between flex-wrap gap-3">
+                      <div className="text-sm text-charcoal/60">
+                        {first.childrenCount === 0 && first.buffetSessions === 0 ? (
+                          <p>Kids Play Zone / Full Board — not booked</p>
+                        ) : (
+                          <>
+                            {first.childrenCount > 0 && (
+                              <p>
+                                Kids Play Zone &middot; {first.childrenCount} child{first.childrenCount === 1 ? '' : 'ren'}, {first.childcareSessions} session{first.childcareSessions === 1 ? '' : 's'} &middot; ₹{Number(first.childcareFee).toLocaleString()}
+                              </p>
+                            )}
+                            {first.buffetSessions > 0 && (
+                              <p>
+                                Full Board &middot; {first.buffetSessions} session{first.buffetSessions === 1 ? '' : 's'} &middot; ₹{Number(first.fullBoardFee).toLocaleString()}
+                              </p>
+                            )}
+                          </>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => {
+                          setAddonsChildren(first.childrenCount)
+                          setAddonsChildcareSessions(first.childcareSessions)
+                          setAddonsBuffetSessions(first.buffetSessions)
+                          setAddonsError('')
+                          setShowAddons(true)
+                        }}
+                        className="text-sm text-olive hover:underline"
+                      >
+                        Edit
+                      </button>
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="grid sm:grid-cols-2 gap-3 mb-3">
+                        {childcareEnabled && (
+                          <div className="bg-stone/40 rounded-lg p-3">
+                            <p className="text-xs uppercase tracking-wide text-charcoal/50 mb-2">Kids Play Zone</p>
+                            <label className="flex items-center justify-between gap-2 text-sm text-charcoal/70 mb-2">
+                              Children
+                              <Select
+                                value={addonsChildren}
+                                onChange={(e) => setAddonsChildren(Number(e.target.value))}
+                                className="w-20 px-2 py-1.5 text-sm"
+                              >
+                                {Array.from({ length: childcarePricing.maxChildren * bookings.length + 1 }, (_, n) => n).map((n) => (
+                                  <option key={n} value={n}>{n}</option>
+                                ))}
+                              </Select>
+                            </label>
+                            <label className="flex items-center justify-between gap-2 text-sm text-charcoal/70">
+                              Sessions used
+                              <Select
+                                value={addonsChildcareSessions}
+                                onChange={(e) => setAddonsChildcareSessions(Number(e.target.value))}
+                                className="w-20 px-2 py-1.5 text-sm"
+                              >
+                                {Array.from({ length: Math.max(nightsForAddons, 0) + 1 }, (_, n) => n).map((n) => (
+                                  <option key={n} value={n}>{n}</option>
+                                ))}
+                              </Select>
+                            </label>
+                            <p className="text-sm text-olive text-right mt-2">
+                              ₹{Math.round(childcarePricing.perDayRate * addonsChildcareSessions * addonsChildren).toLocaleString()}
+                            </p>
+                          </div>
+                        )}
+                        {fullBoardEnabled && (
+                          <div className="bg-stone/40 rounded-lg p-3">
+                            <p className="text-xs uppercase tracking-wide text-charcoal/50 mb-2">Full Board</p>
+                            <label className="flex items-center justify-between gap-2 text-sm text-charcoal/70">
+                              Buffet sessions
+                              <Select
+                                value={addonsBuffetSessions}
+                                onChange={(e) => setAddonsBuffetSessions(Number(e.target.value))}
+                                className="w-20 px-2 py-1.5 text-sm"
+                              >
+                                {Array.from({ length: Math.max(nightsForAddons, 0) * 2 + 1 }, (_, n) => n).map((n) => (
+                                  <option key={n} value={n}>{n}</option>
+                                ))}
+                              </Select>
+                            </label>
+                            <p className="text-xs text-charcoal/50 mt-2">
+                              Lunch + dinner combined &middot; ₹{fullBoardPricing.pricePerSession}/session for all {activeGuestCount} guest{activeGuestCount === 1 ? '' : 's'}
+                            </p>
+                            <p className="text-sm text-olive text-right mt-2">
+                              ₹{Math.round(fullBoardPricing.pricePerSession * addonsBuffetSessions * activeGuestCount).toLocaleString()}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-sm text-olive mb-3 break-words">
+                        New total: ₹{Math.round(
+                          bookings.reduce((sum, b) => sum + Number(b.amount || 0) - Number(b.discountAmount || 0), 0)
+                            + childcarePricing.perDayRate * addonsChildcareSessions * addonsChildren
+                            + fullBoardPricing.pricePerSession * addonsBuffetSessions * activeGuestCount
+                            + Number(first.foodOrdersFee || 0)
+                        ).toLocaleString()}
+                      </p>
+                      {addonsError && <p className="text-sm text-red-600 mb-3 break-words">{addonsError}</p>}
+                      <div className="flex flex-wrap gap-3">
+                        <button
+                          onClick={saveAddons}
+                          disabled={addonsStatus === 'running'}
+                          className="px-5 py-2 rounded-full bg-olive text-warmwhite hover:bg-charcoal transition-colors disabled:opacity-50 text-sm"
+                        >
+                          Confirm change
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setShowAddons(false); setAddonsError('') }}
+                          className="text-sm text-charcoal/60 hover:underline"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+
+            <div className={(childcareEnabled || fullBoardEnabled) ? 'pt-4 mt-1 border-t border-stone' : ''}>
+              <div className="bg-stone/40 rounded-lg p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs uppercase tracking-wide text-charcoal/50">In-Room Dining</p>
+                  <button onClick={() => setShowFoodMenu((v) => !v)} className="text-sm text-olive hover:underline">
+                    {showFoodMenu ? 'Close menu' : '+ Add item'}
+                  </button>
+                </div>
+
+                {first.foodOrders?.length > 0 ? (
+                  <div className="space-y-1.5">
+                    {first.foodOrders.map((o) => (
+                      <div key={o.id} className="flex items-center justify-between gap-3 text-sm bg-white rounded-md px-2.5 py-1.5">
+                        <span className="text-charcoal/80">
+                          <span className="text-charcoal/50 tabular-nums">{o.quantity}&times;</span> {o.itemName}
+                        </span>
+                        <div className="flex items-center gap-2.5 shrink-0">
+                          <span className="text-charcoal/70 tabular-nums">₹{Number(o.lineTotal).toLocaleString()}</span>
+                          <button
+                            onClick={() => removeFoodOrder(o.id)}
+                            disabled={foodOrderStatus === 'running'}
+                            aria-label={`Remove ${o.itemName}`}
+                            className="text-charcoal/30 hover:text-red-600 disabled:opacity-50 leading-none text-base"
+                          >
+                            &times;
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    <p className="text-sm text-olive text-right pt-1">
+                      ₹{Number(first.foodOrdersFee || 0).toLocaleString()}
+                    </p>
+                  </div>
+                ) : (
+                  !showFoodMenu && <p className="text-sm text-charcoal/50">Nothing ordered yet.</p>
+                )}
+
+                {showFoodMenu && (
+                  <div className={`grid gap-2 ${first.foodOrders?.length > 0 ? 'mt-3 pt-3 border-t border-stone/70' : ''}`}>
+                    {cafeItems.map((item) => (
+                      <div key={item.id} className="bg-white rounded-lg p-2.5">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className="w-11 h-11 rounded-md bg-stone bg-cover bg-center shrink-0"
+                            style={{ backgroundImage: item.imageUrl ? `url(${item.imageUrl})` : undefined }}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-charcoal/80 truncate">{item.name}</p>
+                            <p className="text-xs text-charcoal/50">₹{item.price}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-end gap-2 mt-2">
+                          <Select
+                            value={orderQuantities[item.id] || 1}
+                            onChange={(e) => setOrderQuantities((q) => ({ ...q, [item.id]: Number(e.target.value) }))}
+                            className="w-16 px-1.5 py-1 text-sm"
+                          >
+                            {[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n}</option>)}
+                          </Select>
+                          <button
+                            onClick={() => addFoodOrder(item.id)}
+                            disabled={foodOrderStatus === 'running'}
+                            className="px-4 py-1.5 rounded-full bg-olive text-warmwhite text-xs hover:bg-charcoal transition-colors disabled:opacity-50"
+                          >
+                            Add
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {foodOrderError && <p className="text-sm text-red-600 mt-2">{foodOrderError}</p>}
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="space-y-3 mb-6">
           {bookings.map((b) => {
             const property = properties.find((p) => p.id === b.propertyId)
@@ -484,7 +782,7 @@ export default function AdminTripDetail() {
             <button
               onClick={() => {
                 const message = cancellationConfirmMessage(first.checkIn, first.checkOut, true)
-                if (window.confirm(message)) runAction('cancel')
+                askConfirm(message, () => runAction('cancel'))
               }}
               disabled={actionStatus === 'running'}
               className="px-6 py-2.5 rounded-full border border-red-600 text-red-600 hover:bg-red-600 hover:text-white transition-colors disabled:opacity-50"
@@ -495,9 +793,10 @@ export default function AdminTripDetail() {
           {anyActive && (
             <button
               onClick={() => {
-                if (window.confirm("Cancel this whole trip with no refund? Use this only when the rooms and payment are being handled offline. This can't be undone.")) {
-                  runAction('cancel-no-refund')
-                }
+                askConfirm(
+                  "Cancel this whole trip with no refund? Use this only when the rooms and payment are being handled offline. This can't be undone.",
+                  () => runAction('cancel-no-refund')
+                )
               }}
               disabled={actionStatus === 'running'}
               className="px-6 py-2.5 rounded-full text-sm text-charcoal/50 hover:text-red-600 hover:underline transition-colors disabled:opacity-50"
@@ -510,9 +809,18 @@ export default function AdminTripDetail() {
         {actionError && <p className="text-red-600 text-sm mt-4">{actionError}</p>}
 
         <div className="mt-6">
-          <ActivityLog groupId={groupId} />
+          <ActivityLog groupId={groupId} refreshKey={activityVersion} />
         </div>
       </div>
+
+      <ConfirmDialog
+        open={!!confirmDialog}
+        message={confirmDialog?.message}
+        confirmLabel={confirmDialog?.confirmLabel}
+        danger={confirmDialog?.danger}
+        onConfirm={confirmDialog?.onConfirm}
+        onCancel={() => setConfirmDialog(null)}
+      />
     </div>
   )
 }

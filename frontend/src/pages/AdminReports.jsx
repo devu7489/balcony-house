@@ -46,7 +46,7 @@ export default function AdminReports() {
               value={from}
               max={to}
               onChange={(e) => setFrom(e.target.value)}
-              className="mt-1 w-full min-w-0 box-border appearance-none bg-white border border-stone rounded-lg px-3 py-2.5 focus:outline-none focus:border-olive"
+              className="mt-1 w-full min-w-0 h-11 box-border appearance-none bg-white border border-stone rounded-lg px-3 py-2.5 focus:outline-none focus:border-olive"
             />
           </label>
           <label className="text-sm text-charcoal/70 min-w-0">
@@ -57,7 +57,7 @@ export default function AdminReports() {
               min={from}
               max={todayIso()}
               onChange={(e) => setTo(e.target.value)}
-              className="mt-1 w-full min-w-0 box-border appearance-none bg-white border border-stone rounded-lg px-3 py-2.5 focus:outline-none focus:border-olive"
+              className="mt-1 w-full min-w-0 h-11 box-border appearance-none bg-white border border-stone rounded-lg px-3 py-2.5 focus:outline-none focus:border-olive"
             />
           </label>
         </div>

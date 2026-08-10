@@ -1,68 +1,55 @@
-# The Balcony House — Full-Stack Skeleton
+# The Balcony House
 
 **Stay a little longer.**
 
-A minimal-but-working skeleton for a boutique mountain-stay brand site:
-React (Vite + Tailwind) frontend, Spring Boot 3 / Java 21 backend, PostgreSQL,
-Redis-backed server-side sessions, and Google OAuth2/OIDC login — with tokens
-kept entirely on the server.
+A working full-stack booking site for a boutique mountain-stay property: React
+(Vite + Tailwind) frontend, Spring Boot 3 / Java 21 backend, PostgreSQL,
+Redis-backed sessions, and Google OAuth2/OIDC login. This doc gets you from a
+fresh clone to a fully running local copy, and points you at what to read next
+to actually put it on the internet.
 
-## What's implemented
+## Quick start (Docker — the fastest path, no Java/Node needed on your machine)
 
-- **Auth architecture exactly as specified**: Spring Security handles the full
-  Google OAuth2/OIDC flow. Access/refresh tokens never leave the backend. The
-  browser only ever holds a `HttpOnly`, `Secure`-in-prod, `SameSite=Lax`
-  session cookie (`BALCONYSESSION`). CSRF is protected via the standard
-  cookie/header double-submit pattern (`XSRF-TOKEN` cookie ↔ `X-XSRF-TOKEN`
-  header), which axios handles automatically.
-- **Spring Session**, wired to Redis, so sessions can scale horizontally.
-  Inactivity timeout, session-fixation protection, and clean logout
-  (cookie deletion + session invalidation) are all configured.
-- **Authorization**: public GET endpoints for Home/Gallery/Experiences/
-  Café/About/Journal content; `/api/bookings/**` requires an authenticated
-  session.
-- **Audit logging** of login success/failure/logout, persisted to Postgres.
-- **REST modules**: properties (rooms), gallery, experiences, café, journal,
-  contact enquiries, newsletter subscriptions, bookings — each with
-  entity → repository → DTO → controller, global exception handling, and
-  bean validation.
-- **React frontend**: React Router pages for every nav section, an
-  `AuthContext` that only ever asks the backend "who am I" (`GET
-  /api/auth/me`) rather than touching tokens, a `ProtectedRoute` for
-  booking-only pages, an error boundary, loading states, and a Tailwind
-  theme using the specified warm-white / stone / olive / charcoal / wood
-  palette with serif headings + sans body.
-- **Docker**: multi-stage Dockerfiles for both apps, `docker-compose.yml`
-  wiring Postgres + Redis + backend + Caddy-served frontend together, with
-  Caddy proxying `/api`, `/oauth2`, `/login` to the backend so cookies stay
-  same-site (and handling automatic HTTPS in production).
+```bash
+git clone <this-repo-url>
+cd balcony-house
+cp .env.example .env
+```
 
-## What's intentionally left as a next step
+Open `.env` and fill in `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — see
+[Google Cloud setup](#google-cloud-setup-required-for-login) below for exactly
+how to get these. Everything else in `.env.example` already has a working
+default for local use.
 
-This is a skeleton, not the finished brand experience:
+```bash
+docker compose up --build
+```
 
-- **Imagery**: pages reference `/images/...` paths that don't exist yet —
-  drop real photography into `frontend/public/images/...` (see paths used
-  in `Home.jsx`, `data.sql`, etc.) or swap for a CDN.
-- **Admin module**: role-based authorization is wired into `SecurityConfig`
-  (`/api/admin/**` → authenticated) but there's no admin UI or `ADMIN` role
-  assignment flow yet.
-- **Guest Stories / testimonials section** on the homepage.
-- **Payment/availability logic** for bookings — `BookingController` currently
-  just records a request; there's no calendar/availability check or payment
-  integration.
-- Polished scroll animations / micro-interactions described in the brief.
+First run pulls base images and compiles both apps, so give it a few minutes.
+Once it settles:
 
-## External services you'll need
+- **Site**: http://localhost:8081
+- **Backend API** (for debugging): http://localhost:8080/api
+- **Postgres**: localhost:5432 (`balconyhouse` / `balconyhouse`)
+- **Redis**: localhost:6379
 
-Everything below is optional to skim once, but you need working credentials
-from these before `docker compose up` gives you a fully working app (login
-won't work at all without Google; email is silently disabled without Resend).
+Sign in with Google using the same email you put in `ADMIN_EMAILS` in `.env`,
+and you'll land with admin access (an "Admin" link appears in the nav) — that
+gets you into `/admin` to see bookings, the dashboard, room/gallery/testimonial
+management, etc. Any other Google account can browse and book as a guest.
 
-### Google Cloud (required — login)
+The app starts with realistic demo content already loaded (3 room types,
+gallery photos, journal posts, café menu, experiences) — nothing needs to be
+entered before you can click around.
 
-Every guest and admin login goes through Google OAuth2. Without this, nobody
-can sign in at all.
+To stop everything: `Ctrl+C`, then `docker compose down` (add `-v` if you also
+want to wipe the database/uploaded-document volumes and start completely
+fresh next time).
+
+## Google Cloud setup (required for login)
+
+Every guest and admin login goes through Google OAuth2 — without this,
+nobody can sign in at all, Docker or not.
 
 1. Go to [console.cloud.google.com/apis/credentials](https://console.cloud.google.com/apis/credentials)
    and create (or pick) a project.
@@ -71,17 +58,110 @@ can sign in at all.
    (these are the ones `application.yml` already requests).
 3. **Credentials** → *Create Credentials* → *OAuth client ID* → Application
    type **Web application**.
-4. Under **Authorized redirect URIs**, add one per environment you'll run:
-   - Local Docker: `http://localhost:8081/login/oauth2/code/google`
-   - Any ngrok tunnel: `https://<your-ngrok-domain>/login/oauth2/code/google`
-   - Production: `https://yourdomain.com/login/oauth2/code/google`
-   (You can add all three to the same client — no need for separate clients per environment.)
-5. Copy the **Client ID** and **Client secret** it gives you into `.env`:
-   `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`.
-6. To make your own Google account an admin in the app, add that same email
-   to `ADMIN_EMAILS` in `.env` (comma-separated for more than one).
+4. Under **Authorized redirect URIs**, add the ones you'll actually use. For
+   local work you likely want *both* of the first two — they're for two
+   different ways of running this app locally, not alternatives:
 
-### Resend (optional — booking confirmation/cancellation emails)
+   | Redirect URI | When it's used |
+   |---|---|
+   | `http://localhost:8081/login/oauth2/code/google` | **Docker Compose** (the Quick Start above) — Caddy serves everything on 8081 |
+   | `http://localhost:8080/login/oauth2/code/google` | **Non-Docker dev mode** (`mvn spring-boot:run` + `npm run dev`, see below) — the Vite proxy forwards straight to the backend on 8080 |
+   | `https://<your-ngrok-domain>/login/oauth2/code/google` | Only if testing on a real phone via ngrok — see below |
+   | `https://yourdomain.com/login/oauth2/code/google` | Production — see [DEPLOYMENT.md](DEPLOYMENT.md) |
+
+   All of these can live on the same OAuth client — no need for separate
+   clients per environment.
+5. Copy the **Client ID** and **Client secret** into `.env` as
+   `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
+6. To make your own Google account an admin, put that same email in
+   `ADMIN_EMAILS` in `.env` (comma-separated if more than one person needs it).
+
+If you ever see Google reject the login with `redirect_uri_mismatch`, it
+almost always means the URI above doesn't exactly match what's registered —
+check the port and that there's no trailing slash.
+
+## Running locally without Docker (dev mode)
+
+Useful for backend/frontend development with hot reload. Needs a local
+Postgres + Redis (or point the `DB_HOST` / `REDIS_HOST` env vars at existing
+instances — e.g. the ones Docker Compose already runs, via `docker compose up postgres redis`).
+
+**Backend**:
+
+```bash
+cd backend
+mvn spring-boot:run
+```
+
+Reads the same `.env`-style variables via your shell environment or your IDE's
+run configuration (Spring Boot doesn't auto-load `.env` files the way Docker
+Compose does — export the variables you need, or use a plugin like
+`spring-boot-dotenv` / your IDE's env-file support if you'd rather not export
+manually).
+
+**Frontend** (Vite dev server proxies `/api`, `/oauth2`, `/login` to
+`localhost:8080` — see `frontend/vite.config.js`):
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Visit http://localhost:5173. Remember: this mode's OAuth redirect URI is
+`http://localhost:8080/...` (see the table above), not 5173 or 8081.
+
+## What's implemented
+
+The full guest-to-checkout lifecycle works end to end, plus a working admin
+back office:
+
+- **Auth**: Google OAuth2/OIDC via Spring Security, server-side only — the
+  browser only ever holds an `HttpOnly` session cookie (Redis-backed via
+  Spring Session), never a token. CSRF via the standard cookie/header
+  double-submit pattern, handled automatically by axios.
+- **Guest booking flow**: browse rooms → book a single room or a multi-room
+  trip → mandatory online payment at booking time (a pluggable mock gateway
+  today — hold, fail-then-retry, auto-release if abandoned — built so a real
+  provider like Razorpay is a drop-in swap later) → view/cancel bookings with
+  a nights-based prorated refund policy → auto-generated GST invoice.
+- **Admin back office** (`/admin`, gated on `ADMIN_EMAILS`): dashboard
+  (occupancy/revenue/outstanding balance), booking & trip management,
+  check-in/check-out (with guest ID document upload gating check-in),
+  availability calendar, room maintenance blocking, housekeeping status,
+  guest directory, financial CSV export, an action audit trail, and CRUD for
+  testimonials.
+- **Content**: gallery, café menu, experiences, and journal (blog) pages are
+  all backed by the database and easy to re-seed — see
+  `backend/src/main/resources/data.sql`.
+- **White-labeling**: hotel name, branding, contact info, GST settings, room
+  inventory/pricing, check-in/out times, and policy notes are all plain YAML
+  config (`app.hotel` in `backend/src/main/resources/application.yml`) —
+  re-skinning this for a different property is meant to start and end there,
+  no code changes.
+- **Email** (optional, off by default): booking confirmation/cancellation/
+  payment-reminder emails via Resend.
+- **Docker**: multi-stage Dockerfiles for both apps; `docker-compose.yml` +
+  `docker-compose.override.yml` (local) or `docker-compose.prod.yml`
+  (production) wire Postgres + Redis + backend + Caddy-served frontend
+  together, with Caddy proxying `/api`, `/oauth2`, `/login` to the backend so
+  cookies stay same-site (and handling automatic HTTPS in production).
+
+## What's not built yet
+
+See [ROADMAP.md](ROADMAP.md) for the current, prioritized gap list (what's
+missing, why it might matter, and what's already in progress) — it's kept
+up to date separately from this file since it changes faster.
+
+## External services you'll need
+
+Everything below is optional to skim once, but you need working credentials
+from these before the app is fully functional end to end (login won't work at
+all without Google; email is silently disabled without Resend).
+
+### Google Cloud (required — see [above](#google-cloud-setup-required-for-login))
+
+### Resend (optional — booking confirmation/cancellation/reminder emails)
 
 Only needed if you want `EMAIL_ENABLED=true`. Leave it `false` and the app
 runs fine without it — bookings/cancellations just won't email anyone.
@@ -108,54 +188,45 @@ on your laptop.
 2. Run `ngrok http 8081` (8081 = the Caddy/frontend port) — it prints a
    public `https://*.ngrok-free.dev` URL forwarding to your machine.
 3. Add `https://<that-domain>/login/oauth2/code/google` as another
-   Authorized redirect URI on the same Google OAuth client (step 4 above).
+   Authorized redirect URI on the same Google OAuth client (see the table
+   above).
 4. Point `.env` at it: `FRONTEND_URL`, `CORS_ORIGINS` = the ngrok URL, plus
    `SITE_ADDRESS=:80` and `FORWARDED_PROTO=https` (ngrok terminates HTTPS at
    its edge, so Caddy needs to be told that explicitly — see the comment
-   already in `.env` for this).
+   already in `.env.production.example` for this).
 
 ### A domain (needed eventually — production hosting + real Resend delivery)
 
-Not needed for local dev. You'll want one (~$10–15/year from any registrar —
-Namecheap, Cloudflare Registrar, GoDaddy, etc.) for two things once you're
-ready to go live: Caddy uses it to get itself a free HTTPS certificate
-automatically (`SITE_ADDRESS` in `.env.production.example`), and Resend uses
-it to let you send to real guests (see above).
+Not needed for local dev. See [DEPLOYMENT.md](DEPLOYMENT.md).
 
-## Running locally with Docker
+## Publishing / going live
 
-```bash
-cp .env.example .env
-# fill in GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET (see "External services" above)
+Once you're happy running it locally, [DEPLOYMENT.md](DEPLOYMENT.md) walks
+through putting this on a real domain with HTTPS and auto-deploy on every
+push to `main` — a free-tier cloud VM, opening ports, DNS, and the one-time
+server setup. After that initial setup, shipping a change is just `git push`.
 
-docker compose up --build
-```
+## Troubleshooting
 
-- Frontend: http://localhost:8081
-- Backend API: http://localhost:8080/api
-- Postgres: localhost:5432 (balconyhouse/balconyhouse)
-- Redis: localhost:6379
-
-## Running locally without Docker (dev mode)
-
-**Backend** (needs local Postgres + Redis, or point `DB_HOST`/`REDIS_HOST`
-env vars at your own instances):
-
-```bash
-cd backend
-mvn spring-boot:run
-```
-
-**Frontend** (Vite dev server proxies `/api`, `/oauth2`, `/login` to
-`localhost:8080` — see `vite.config.js`):
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Visit http://localhost:5173.
+- **`redirect_uri_mismatch` from Google**: the URI Google is being sent to
+  doesn't exactly match one registered on the OAuth client. Check you're
+  using the right one for how you're running the app (see the table
+  [above](#google-cloud-setup-required-for-login)) — Docker Compose uses
+  8081, non-Docker dev mode uses 8080.
+- **`docker compose up` fails with a port already in use**: something else on
+  your machine is already bound to 8081, 8080, 5432, or 6379. Stop that
+  process, or edit the port mappings in `docker-compose.override.yml`.
+- **Logged in but no "Admin" link in the nav**: your Google account's email
+  isn't in `ADMIN_EMAILS` in `.env`. Add it (comma-separated for more than
+  one) and restart the backend (`docker compose up -d backend` after editing
+  `.env`, or `docker compose up --build -d backend` if you also changed code).
+- **Email-dependent features (reminders, confirmations) not sending**:
+  expected if `EMAIL_ENABLED=false` (the default) — this is silent by design,
+  not a bug. See [Resend setup](#resend-optional--booking-confirmationcancellationreminder-emails).
+- **Changes to `data.sql` or `application.yml` don't seem to take effect**:
+  these only apply on backend startup — rerun
+  `docker compose up --build -d backend`, or restart `mvn spring-boot:run` in
+  dev mode.
 
 ## Project layout
 
@@ -163,12 +234,35 @@ Visit http://localhost:5173.
 balcony-house/
   backend/    Spring Boot 3 / Java 21 REST API
   frontend/   React + Vite + Tailwind SPA
-  docker-compose.yml
-  .env.example
+  docker-compose.yml               base service definitions
+  docker-compose.override.yml      local-only additions (auto-loaded, host port mappings)
+  docker-compose.prod.yml          production additions (explicit -f flag, see DEPLOYMENT.md)
+  .env.example                     copy to .env for local dev
+  .env.production.example          copy to .env on a production server
 ```
 
-Backend package layout is feature-first (`property/`, `gallery/`,
-`experience/`, `cafe/`, `journal/`, `contact/`, `newsletter/`, `booking/`,
-`auth/`, `audit/`, `config/`, `common/`) — each mirrors
-entity → repository → (service) → DTO → controller, ready to extend as
-"Future-ready modules" grow.
+Backend package layout is feature-first — each package mirrors
+entity → repository → service → DTO → controller:
+
+```
+backend/src/main/java/com/thebalconyhouse/backend/
+  auth/          Google OAuth2 login, session, "who am I"
+  audit/         Login/logout audit logging
+  booking/       Core booking + trip lifecycle, cancellation policy application
+  addon/         Cancellation policy calculation, childcare/full-board pricing
+  payment/       Pluggable payment gateway (mock today, real provider later)
+  document/      Guest ID document upload/storage
+  profile/       Guest profile (name/phone) completion
+  property/      Room types/inventory, availability
+  hotel/         White-label config (name/branding/GST/policies/rooms)
+  gallery/ cafe/ experience/ journal/  Public content sections
+  testimonial/   Guest reviews (public read, admin CRUD)
+  contact/ newsletter/   Contact form + newsletter signup
+  notification/  Outbound email (Resend)
+  config/        Spring Security, CORS, and other cross-cutting config
+  common/        Shared exception handling, etc.
+```
+
+Frontend routes live in `frontend/src/App.jsx`; pages in `frontend/src/pages/`
+mirror the nav (public pages) plus `Admin*.jsx` (admin back office, gated by
+`AdminRoute.jsx`).

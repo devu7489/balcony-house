@@ -188,7 +188,9 @@ app:
       mid-stay-rate: ${CHILDCARE_MID_STAY_RATE:500}       # per child/day, 6-10 nights
       long-stay-rate: ${CHILDCARE_LONG_STAY_RATE:400}     # per child/day, 11+ nights
     full-board:
-      price-per-person-per-day: ${FULL_BOARD_RATE:500}
+      # A buffet session is one meal service (lunch OR dinner) for the whole trip's guest
+      # count - "Full Board" for a full day is 2 sessions (lunch + dinner), i.e. 500/person/day.
+      price-per-session: ${FULL_BOARD_SESSION_RATE:250}
 
   # No real payment gateway is wired up yet - "mock" simulates one closely enough to build
   # and test the real flow against (see payment/MockPaymentGateway): it holds the room,

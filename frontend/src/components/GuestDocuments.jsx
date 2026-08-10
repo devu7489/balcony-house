@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import apiClient from '../api/axiosClient'
 import Select from './Select'
+import ConfirmDialog from './ConfirmDialog'
 
 const DOCUMENT_TYPES = [
   { value: 'AADHAAR', label: 'Aadhaar Card' },
@@ -27,6 +28,7 @@ export default function GuestDocuments({ bookingId, onCountChange }) {
   const [uploadStatus, setUploadStatus] = useState('idle')
   const [uploadError, setUploadError] = useState('')
   const [deletingId, setDeletingId] = useState(null)
+  const [confirmDocId, setConfirmDocId] = useState(null)
 
   const load = () => apiClient.get(`/admin/bookings/${bookingId}/documents`).then(({ data }) => {
     setDocuments(data)
@@ -61,7 +63,6 @@ export default function GuestDocuments({ bookingId, onCountChange }) {
   }
 
   const remove = async (docId) => {
-    if (!window.confirm('Remove this document?')) return
     setDeletingId(docId)
     try {
       await apiClient.delete(`/admin/bookings/${bookingId}/documents/${docId}`)
@@ -94,7 +95,7 @@ export default function GuestDocuments({ bookingId, onCountChange }) {
                   {new Date(d.uploadedAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}
                 </span>
                 <button
-                  onClick={() => remove(d.id)}
+                  onClick={() => setConfirmDocId(d.id)}
                   disabled={deletingId === d.id}
                   className="text-xs text-red-600 hover:underline disabled:opacity-50"
                 >
@@ -126,6 +127,14 @@ export default function GuestDocuments({ bookingId, onCountChange }) {
         </button>
       </form>
       {uploadError && <p className="text-xs text-red-600 mt-2">{uploadError}</p>}
+
+      <ConfirmDialog
+        open={confirmDocId != null}
+        message="Remove this document?"
+        danger
+        onConfirm={() => { const id = confirmDocId; setConfirmDocId(null); remove(id) }}
+        onCancel={() => setConfirmDocId(null)}
+      />
     </div>
   )
 }

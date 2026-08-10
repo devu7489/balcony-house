@@ -79,7 +79,7 @@ export default function Stay() {
             min={todayIso()}
             value={checkIn}
             onChange={(e) => { setCheckIn(e.target.value); setCheckOut(nextDayIso(e.target.value)) }}
-            className="mt-1 w-full min-w-0 box-border appearance-none bg-white border border-stone rounded-lg px-3 py-3 focus:outline-none focus:border-olive"
+            className="mt-1 w-full min-w-0 h-11 box-border appearance-none bg-white border border-stone rounded-lg px-3 py-3 focus:outline-none focus:border-olive"
           />
         </label>
         <label className="text-sm text-charcoal/70 col-span-1 min-w-0">
@@ -90,7 +90,7 @@ export default function Stay() {
             disabled={!checkIn}
             value={checkOut}
             onChange={(e) => setCheckOut(e.target.value)}
-            className="mt-1 w-full min-w-0 box-border appearance-none bg-white border border-stone rounded-lg px-3 py-3 focus:outline-none focus:border-olive disabled:opacity-50"
+            className="mt-1 w-full min-w-0 h-11 box-border appearance-none bg-white border border-stone rounded-lg px-3 py-3 focus:outline-none focus:border-olive disabled:opacity-50"
           />
         </label>
         <p className="text-sm text-charcoal/50 col-span-1 sm:col-span-2 md:col-span-2 self-center">

@@ -52,15 +52,42 @@ public class Booking {
 
     private int childrenCount = 0;
 
+    // How many childcare sessions (day-slots at the Kids Play Zone, combined across every
+    // enrolled child) this trip is actually billed for - the fee driver, not childrenCount
+    // itself. Defaulted to `nights` at creation (assume every day), correctable by admin
+    // afterward to what was actually used. Integer (not int) and nullable, same pattern as
+    // paymentAttempts below - existing rows predate this column, and Hibernate 6's row
+    // hydration throws rather than coercing a SQL NULL into a primitive int field (a plain
+    // "int" field also fails schema migration outright: it defaults to a NOT NULL column,
+    // and "ALTER TABLE ... ADD COLUMN ... NOT NULL" is rejected against a table that
+    // already has rows with nothing to backfill it with). Use getChildcareSessions().
+    private Integer childcareSessions;
+
     private BigDecimal childcareFee = BigDecimal.ZERO;
 
     private boolean fullBoard = false;
+
+    // How many buffet sessions (one meal service - lunch or dinner - for the trip's whole
+    // guest count) this trip is actually billed for. Defaulted to `nights * 2` at creation
+    // (assume every day, both meals), correctable by admin afterward. See childcareSessions
+    // for why this is Integer, not int. Use getBuffetSessions().
+    private Integer buffetSessions;
 
     private BigDecimal fullBoardFee = BigDecimal.ZERO;
 
     private int discountPercent = 0;
 
     private BigDecimal discountAmount = BigDecimal.ZERO;
+
+    // Running total of non-voided FoodOrder line items billed to this booking (see
+    // BookingService.addFoodOrder/removeFoodOrder). Denormalized here the same way
+    // childcareFee/fullBoardFee are, so getFullTotal() stays a pure formula over already-
+    // loaded fields rather than needing a live join every time a total is read. Only ever
+    // non-zero on the trip's addon-bearer booking - same billed-once-per-trip rule as
+    // childcare/full board. Nullable (existing rows predate this column, and the Java-side
+    // ZERO default only applies to newly-constructed entities, not rows Hibernate hydrates
+    // from a NULL column) - use getFoodOrdersFee(), same pattern as getAmountPaid().
+    private BigDecimal foodOrdersFee;
 
     // Set once, at cancellation time, by BookingService's cancellation-policy check - null
     // until then. Record-keeping only: there's no payment gateway to auto-charge or
@@ -127,9 +154,9 @@ public class Booking {
     public String getPaymentReference() { return paymentReference; }
     public BigDecimal getAmountPaid() { return amountPaid != null ? amountPaid : BigDecimal.ZERO; }
 
-    /** Room + childcare + full board, minus any discount - what the guest actually owes in total. */
+    /** Room + childcare + full board + food orders, minus any discount - what the guest actually owes in total. */
     public BigDecimal getFullTotal() {
-        return amount.add(childcareFee).add(fullBoardFee).subtract(discountAmount);
+        return amount.add(childcareFee).add(fullBoardFee).add(getFoodOrdersFee()).subtract(discountAmount);
     }
 
     /**
@@ -152,17 +179,23 @@ public class Booking {
     public void setPaymentMethod(String paymentMethod) { this.paymentMethod = paymentMethod; }
     public void setPaymentReference(String paymentReference) { this.paymentReference = paymentReference; }
     public int getChildrenCount() { return childrenCount; }
+    public int getChildcareSessions() { return childcareSessions == null ? 0 : childcareSessions; }
     public BigDecimal getChildcareFee() { return childcareFee; }
-    public void setChildcare(int childrenCount, BigDecimal childcareFee) {
+    public void setChildcare(int childrenCount, int childcareSessions, BigDecimal childcareFee) {
         this.childrenCount = childrenCount;
+        this.childcareSessions = childcareSessions;
         this.childcareFee = childcareFee;
     }
     public boolean isFullBoard() { return fullBoard; }
+    public int getBuffetSessions() { return buffetSessions == null ? 0 : buffetSessions; }
     public BigDecimal getFullBoardFee() { return fullBoardFee; }
-    public void setFullBoard(boolean fullBoard, BigDecimal fullBoardFee) {
+    public void setFullBoard(boolean fullBoard, int buffetSessions, BigDecimal fullBoardFee) {
         this.fullBoard = fullBoard;
+        this.buffetSessions = buffetSessions;
         this.fullBoardFee = fullBoardFee;
     }
+    public BigDecimal getFoodOrdersFee() { return foodOrdersFee != null ? foodOrdersFee : BigDecimal.ZERO; }
+    public void setFoodOrdersFee(BigDecimal foodOrdersFee) { this.foodOrdersFee = foodOrdersFee; }
     public int getDiscountPercent() { return discountPercent; }
     public BigDecimal getDiscountAmount() { return discountAmount; }
     public void setDiscount(int discountPercent, BigDecimal discountAmount) {
