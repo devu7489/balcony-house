@@ -82,7 +82,7 @@ public class ReportService {
         Map<Long, java.math.BigDecimal> payableTotals = PayableTotals.forBookings(bookings);
 
         StringBuilder sb = new StringBuilder();
-        sb.append("Booking ID,Guest Name,Guest Email,Guest Phone,Room,Check-in,Check-out,Status,Payment Status," +
+        sb.append("Booking ID,Guest Name,Guest Email,Guest Phone,Room,Check-in,Check-out,Status,Cancellation Type,Payment Status," +
                 "Room Amount,Childcare Fee,Full Board Fee,Discount,Payable Total,Amount Paid\n");
         for (Booking b : bookings) {
             Property property = propertiesById.get(b.getPropertyId());
@@ -95,6 +95,7 @@ public class ReportService {
                     b.getCheckIn().format(DATE_FMT),
                     b.getCheckOut().format(DATE_FMT),
                     b.getStatus().name(),
+                    b.getCancellationType() != null ? b.getCancellationType().name() : "",
                     b.getPaymentStatus().name(),
                     b.getAmount() != null ? b.getAmount().toPlainString() : "0",
                     b.getChildcareFee() != null ? b.getChildcareFee().toPlainString() : "0",

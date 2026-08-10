@@ -1,6 +1,7 @@
 package com.thebalconyhouse.backend.booking;
 
 import com.thebalconyhouse.backend.booking.dto.AddonUpdateRequest;
+import com.thebalconyhouse.backend.booking.dto.AdminBookingGroupRequest;
 import com.thebalconyhouse.backend.booking.dto.AdminBookingRequest;
 import com.thebalconyhouse.backend.booking.dto.BookingActivityDto;
 import com.thebalconyhouse.backend.booking.dto.BookingDto;
@@ -51,6 +52,16 @@ public class AdminBookingController {
         return cafeRepository.findById(cafeItemId).map(CafeItem::getName).orElse("item");
     }
 
+    /** Human label for the auto-classified cancellation type (see BookingService.classifyCancellation). */
+    private static String cancellationTypeLabel(CancellationType type) {
+        if (type == null) return null;
+        return switch (type) {
+            case PRE_ARRIVAL -> "Before check-in";
+            case MID_STAY -> "Mid-stay";
+            case NO_SHOW -> "No-show";
+        };
+    }
+
     @GetMapping
     public List<BookingDto> all() {
         return bookingService.findAll();
@@ -68,6 +79,16 @@ public class AdminBookingController {
         activityLogService.record(dto.id(), dto.bookingGroupId(), "CREATED", email(principal),
                 "Phone booking for " + dto.guestName());
         return dto;
+    }
+
+    @PostMapping("/group")
+    public List<BookingDto> createGroup(@Valid @RequestBody AdminBookingGroupRequest request,
+                                         @AuthenticationPrincipal OAuth2User principal) {
+        List<BookingDto> dtos = bookingService.createGroupForAdmin(request);
+        bookingEmailService.sendConfirmation(dtos);
+        activityLogService.record(null, dtos.get(0).bookingGroupId(), "CREATED", email(principal),
+                "Phone booking (trip, " + dtos.size() + " rooms) for " + request.guestName());
+        return dtos;
     }
 
     @PostMapping("/{id}/check-in")
@@ -91,10 +112,12 @@ public class AdminBookingController {
     public BookingDto cancel(@PathVariable Long id, @AuthenticationPrincipal OAuth2User principal) {
         BookingDto dto = bookingService.cancel(id);
         bookingEmailService.sendCancellation(List.of(dto));
-        String details = dto.cancellationPenaltyAmount() != null && dto.cancellationPenaltyAmount().signum() > 0
+        String penalty = dto.cancellationPenaltyAmount() != null && dto.cancellationPenaltyAmount().signum() > 0
                 ? "Cancellation penalty: ₹" + dto.cancellationPenaltyAmount()
                 : null;
-        activityLogService.record(dto.id(), dto.bookingGroupId(), "CANCELLED", email(principal), details);
+        String details = String.join(". ", java.util.stream.Stream.of(cancellationTypeLabel(dto.cancellationType()), penalty)
+                .filter(java.util.Objects::nonNull).toList());
+        activityLogService.record(dto.id(), dto.bookingGroupId(), "CANCELLED", email(principal), details.isBlank() ? null : details);
         return dto;
     }
 
@@ -108,8 +131,9 @@ public class AdminBookingController {
     public BookingDto cancelNoRefund(@PathVariable Long id, @AuthenticationPrincipal OAuth2User principal) {
         BookingDto dto = bookingService.cancelNoRefund(id);
         bookingEmailService.sendCancellation(List.of(dto));
+        String typeLabel = cancellationTypeLabel(dto.cancellationType());
         activityLogService.record(dto.id(), dto.bookingGroupId(), "CANCELLED_NO_REFUND", email(principal),
-                "Cancelled with no refund - handled offline");
+                (typeLabel != null ? typeLabel + ". " : "") + "Cancelled with no refund - handled offline");
         return dto;
     }
 
@@ -117,8 +141,10 @@ public class AdminBookingController {
     public List<BookingDto> cancelGroupNoRefund(@PathVariable Long groupId, @AuthenticationPrincipal OAuth2User principal) {
         List<BookingDto> dtos = bookingService.cancelGroupNoRefund(groupId);
         bookingEmailService.sendCancellation(dtos);
+        var distinctTypes = dtos.stream().map(BookingDto::cancellationType).filter(java.util.Objects::nonNull).distinct().toList();
+        String typeLabel = distinctTypes.size() == 1 ? cancellationTypeLabel(distinctTypes.get(0)) : null;
         activityLogService.record(null, groupId, "CANCELLED_NO_REFUND", email(principal),
-                "Whole trip cancelled with no refund - handled offline");
+                (typeLabel != null ? typeLabel + ". " : "") + "Whole trip cancelled with no refund - handled offline");
         return dtos;
     }
 
@@ -247,7 +273,14 @@ public class AdminBookingController {
                 .map(BookingDto::cancellationPenaltyAmount)
                 .filter(java.util.Objects::nonNull)
                 .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
-        String details = totalPenalty.signum() > 0 ? "Whole trip · cancellation penalty: ₹" + totalPenalty : "Whole trip";
+        // Every room in a trip is usually cancelled in the same state, but not guaranteed
+        // (e.g. one room already checked in while another wasn't) - only show a single type
+        // label when they all agree, rather than guessing at a mixed-trip summary.
+        var distinctTypes = dtos.stream().map(BookingDto::cancellationType).filter(java.util.Objects::nonNull).distinct().toList();
+        String typeLabel = distinctTypes.size() == 1 ? cancellationTypeLabel(distinctTypes.get(0)) : null;
+        String details = String.join(" · ", java.util.stream.Stream.of("Whole trip", typeLabel,
+                        totalPenalty.signum() > 0 ? "cancellation penalty: ₹" + totalPenalty : null)
+                .filter(java.util.Objects::nonNull).toList());
         activityLogService.record(null, groupId, "CANCELLED", email(principal), details);
         return dtos;
     }

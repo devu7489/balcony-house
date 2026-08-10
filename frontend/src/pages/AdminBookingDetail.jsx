@@ -10,7 +10,7 @@ import ActivityLog from '../components/ActivityLog'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { roomNumberOptions } from '../lib/roomNumbers'
 import { todayIso } from '../lib/dates'
-import { cancellationConfirmMessage } from '../lib/cancellationPolicy'
+import { cancellationConfirmMessage, cancellationTypeLabel } from '../lib/cancellationPolicy'
 import { useHotelConfig } from '../context/HotelConfigContext'
 
 export default function AdminBookingDetail() {
@@ -297,16 +297,19 @@ export default function AdminBookingDetail() {
             </div>
           )}
 
-          {booking.status === 'CANCELLED' && Number(booking.cancellationPenaltyAmount) > 0 && (
+          {booking.status === 'CANCELLED' && (booking.cancellationType || Number(booking.cancellationPenaltyAmount) > 0) && (
             <div className="mb-6 bg-stone/50 border border-stone rounded-lg p-4">
-              <p className="text-xs uppercase tracking-wide text-charcoal/50 mb-1">Cancellation penalty</p>
+              <p className="text-xs uppercase tracking-wide text-charcoal/50 mb-1">Cancellation</p>
               <p className="text-charcoal/80">
-                ₹{Number(booking.cancellationPenaltyAmount).toLocaleString()} — cancelled within the free-cancellation window.
+                {cancellationTypeLabel(booking.cancellationType)}
+                {Number(booking.cancellationPenaltyAmount) > 0 && (
+                  <>{booking.cancellationType ? ' — ' : ''}₹{Number(booking.cancellationPenaltyAmount).toLocaleString()} penalty</>
+                )}
               </p>
             </div>
           )}
 
-          {booking.status !== 'CANCELLED' && (
+          {(
             <div className="mb-6 border border-stone rounded-lg p-4">
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <div className="flex items-center gap-3">
@@ -314,7 +317,7 @@ export default function AdminBookingDetail() {
                     <span className="font-serif text-lg">₹{fullTotal.toLocaleString()}</span>
                   )}
                   <PaymentBadge status={booking.paymentStatus} />
-                  {booking.paymentStatus === 'PAID' && (
+                  {booking.paymentStatus === 'PAID' && booking.status !== 'CANCELLED' && (
                     <Link
                       to={booking.bookingGroupId ? `/admin/invoice/trip/${booking.bookingGroupId}` : `/admin/invoice/booking/${booking.id}`}
                       className="text-sm text-olive hover:underline"
@@ -323,17 +326,17 @@ export default function AdminBookingDetail() {
                     </Link>
                   )}
                 </div>
-                {isAddonBearer && booking.childrenCount > 0 && (
+                {booking.status !== 'CANCELLED' && isAddonBearer && booking.childrenCount > 0 && (
                   <p className="text-sm text-charcoal/60">
                     incl. Kids Play Zone &middot; {booking.childrenCount} child{booking.childrenCount === 1 ? '' : 'ren'} &middot; ₹{Number(booking.childcareFee).toLocaleString()}
                   </p>
                 )}
-                {isAddonBearer && booking.fullBoard && (
+                {booking.status !== 'CANCELLED' && isAddonBearer && booking.fullBoard && (
                   <p className="text-sm text-charcoal/60">
                     incl. Full Board &middot; ₹{Number(booking.fullBoardFee).toLocaleString()}
                   </p>
                 )}
-                {!isAddonBearer && (booking.childrenCount > 0 || booking.fullBoard) && (
+                {booking.status !== 'CANCELLED' && !isAddonBearer && (booking.childrenCount > 0 || booking.fullBoard) && (
                   <p className="text-sm text-charcoal/60">Kids Play Zone / Full Board for this trip are billed to another room.</p>
                 )}
                 {booking.discountPercent > 0 && (
@@ -341,14 +344,14 @@ export default function AdminBookingDetail() {
                     {booking.discountPercent}% discount &middot; -₹{Number(booking.discountAmount).toLocaleString()}
                   </p>
                 )}
-                {booking.paymentStatus !== 'PAID' && amountPaidSoFar > 0 && (
+                {balanceDue !== 0 && amountPaidSoFar > 0 && (
                   <p className="text-sm text-olive w-full">
                     Already paid ₹{amountPaidSoFar.toLocaleString()}
                     {balanceDue > 0 && ` · Balance due ₹${balanceDue.toLocaleString()}`}
                     {balanceDue < 0 && ` · Refund due ₹${Math.abs(balanceDue).toLocaleString()}`}
                   </p>
                 )}
-                {booking.paymentStatus !== 'PAID' && !showPaymentForm && (
+                {balanceDue !== 0 && !showPaymentForm && (
                   <button
                     onClick={() => { setPaymentAmount(balanceDue !== 0 ? String(balanceDue) : ''); setShowPaymentForm(true) }}
                     className="text-sm text-olive hover:underline"
@@ -406,7 +409,7 @@ export default function AdminBookingDetail() {
                     <Select
                       value={paymentMethod}
                       onChange={(e) => setPaymentMethod(e.target.value)}
-                      className="mt-1 px-3 py-2.5"
+                      className="mt-1 w-full px-3 py-2.5"
                     >
                       <option>Cash</option>
                       <option>UPI</option>
@@ -549,18 +552,22 @@ export default function AdminBookingDetail() {
                           </>
                         )}
                       </div>
-                      <button
-                        onClick={() => {
-                          setAddonsChildren(booking.childrenCount)
-                          setAddonsChildcareSessions(booking.childcareSessions)
-                          setAddonsBuffetSessions(booking.buffetSessions)
-                          setAddonsError('')
-                          setShowAddons(true)
-                        }}
-                        className="text-sm text-olive hover:underline"
-                      >
-                        Edit
-                      </button>
+                      {booking.status === 'CHECKED_IN' ? (
+                        <button
+                          onClick={() => {
+                            setAddonsChildren(booking.childrenCount)
+                            setAddonsChildcareSessions(booking.childcareSessions)
+                            setAddonsBuffetSessions(booking.buffetSessions)
+                            setAddonsError('')
+                            setShowAddons(true)
+                          }}
+                          className="text-sm text-olive hover:underline"
+                        >
+                          Edit
+                        </button>
+                      ) : (
+                        <p className="text-xs text-charcoal/40">Editable after check-in</p>
+                      )}
                     </div>
                   ) : (
                     <div>
@@ -655,9 +662,13 @@ export default function AdminBookingDetail() {
                 <div className="bg-stone/40 rounded-lg p-3">
                   <div className="flex items-center justify-between mb-2">
                     <p className="text-xs uppercase tracking-wide text-charcoal/50">In-Room Dining</p>
-                    <button onClick={() => setShowFoodMenu((v) => !v)} className="text-sm text-olive hover:underline">
-                      {showFoodMenu ? 'Close menu' : '+ Add item'}
-                    </button>
+                    {booking.status === 'CHECKED_IN' ? (
+                      <button onClick={() => setShowFoodMenu((v) => !v)} className="text-sm text-olive hover:underline">
+                        {showFoodMenu ? 'Close menu' : '+ Add item'}
+                      </button>
+                    ) : (
+                      <p className="text-xs text-charcoal/40">Available after check-in</p>
+                    )}
                   </div>
 
                   {booking.foodOrders?.length > 0 ? (

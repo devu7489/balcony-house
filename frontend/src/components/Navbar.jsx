@@ -115,18 +115,35 @@ export default function Navbar() {
               {l.label}
             </NavLink>
           ))}
-          <div className="pt-2">
+          {/* Visually separated from the site nav above (border-t + eyebrow label) so it reads
+              as "your account", not one more link blended into Stay/Experiences/Café/etc - and
+              the greeting itself is the fix for "doesn't tell you you're logged in" on mobile,
+              where the desktop "Hi, {name}" pill never had an equivalent. */}
+          <div className="pt-4 mt-2 border-t border-stone">
             {user ? (
               <>
-                <NavLink to="/my-bookings" onClick={() => setOpen(false)} className="block text-charcoal/80 mb-3">
-                  My Bookings
-                </NavLink>
-                {user.isAdmin && (
-                  <NavLink to="/admin" onClick={() => setOpen(false)} className="block text-charcoal/80 mb-3">
-                    Admin
+                <p className="text-xs uppercase tracking-wide text-charcoal/50 mb-3">
+                  Signed in as {user.name}
+                </p>
+                <div className="bg-stone/40 rounded-lg divide-y divide-stone mb-4 overflow-hidden">
+                  <NavLink
+                    to="/my-bookings"
+                    onClick={() => setOpen(false)}
+                    className="block px-4 py-3 text-charcoal/80"
+                  >
+                    My Bookings
                   </NavLink>
-                )}
-                <button onClick={logout} className="text-sm">Log out</button>
+                  {user.isAdmin && (
+                    <NavLink
+                      to="/admin"
+                      onClick={() => setOpen(false)}
+                      className="block px-4 py-3 text-charcoal/80"
+                    >
+                      Admin
+                    </NavLink>
+                  )}
+                </div>
+                <button onClick={logout} className="text-sm text-charcoal/50">Log out</button>
               </>
             ) : (
               <button onClick={login} className="text-sm px-5 py-2 rounded-full bg-olive text-warmwhite hover:bg-charcoal transition-colors">Sign in</button>

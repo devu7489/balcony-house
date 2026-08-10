@@ -26,3 +26,14 @@ h1, h2, h3, .font-heading {
 .animate-kenburns-hero {
   animation: kenburns 20s ease-out forwards;
 }
+
+/* Scroll-snap carousels (e.g. Home.jsx testimonials) rely on drag/swipe/arrow-button
+   scrolling, not a visible scrollbar, for a cleaner card-row look. */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

@@ -95,6 +95,13 @@ public class Booking {
     // negative-payment refund flow); this just records what the policy said was owed.
     private BigDecimal cancellationPenaltyAmount;
 
+    // Computed automatically at cancel time (see BookingService.classifyCancellation) - null
+    // for anything never cancelled, and for legacy rows cancelled before this field existed
+    // (there's no cancelledAt timestamp to retroactively determine which bucket they'd fall
+    // into). Purely descriptive; doesn't affect the refund math above.
+    @Enumerated(EnumType.STRING)
+    private CancellationType cancellationType;
+
     // Set true the first time this booking's room CATEGORY is changed via upgradeRoom() -
     // only one such change is allowed per stay (see BookingService.upgradeRoom for why).
     // A physical room NUMBER change within the same category (setRoomNumber) is unrelated
@@ -204,6 +211,8 @@ public class Booking {
     }
     public BigDecimal getCancellationPenaltyAmount() { return cancellationPenaltyAmount; }
     public void setCancellationPenaltyAmount(BigDecimal cancellationPenaltyAmount) { this.cancellationPenaltyAmount = cancellationPenaltyAmount; }
+    public CancellationType getCancellationType() { return cancellationType; }
+    public void setCancellationType(CancellationType cancellationType) { this.cancellationType = cancellationType; }
     public boolean isRoomUpgraded() { return Boolean.TRUE.equals(roomUpgraded); }
     public void setRoomUpgraded(boolean roomUpgraded) { this.roomUpgraded = roomUpgraded; }
     public String getPaymentOrderRef() { return paymentOrderRef; }

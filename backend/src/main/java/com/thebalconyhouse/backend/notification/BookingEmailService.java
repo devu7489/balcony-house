@@ -106,7 +106,8 @@ public class BookingEmailService {
             String link = first.bookingGroupId() != null
                     ? frontendUrl + "/invoice/trip/" + first.bookingGroupId()
                     : frontendUrl + "/invoice/booking/" + first.id();
-            emailService.send(first.guestEmail(), subject, checkoutHtml(invoice, link));
+            String reviewLink = frontendUrl + "/leave-review/" + first.id();
+            emailService.send(first.guestEmail(), subject, checkoutHtml(invoice, link, reviewLink));
         } catch (Exception e) {
             log.warn("Failed to build checkout/invoice email: {}", e.getMessage());
         }
@@ -181,14 +182,33 @@ public class BookingEmailService {
     private String cancellationHtml(List<BookingDto> bookings) {
         BookingDto first = bookings.get(0);
         StringBuilder rooms = new StringBuilder();
+        BigDecimal paid = BigDecimal.ZERO;
+        BigDecimal penalty = BigDecimal.ZERO;
         for (BookingDto b : bookings) {
             rooms.append(lineRow(b.propertyName() != null ? b.propertyName() : ("Room #" + b.propertyId()), money(b.amount())));
+            paid = paid.add(orZero(b.amountPaid()));
+            penalty = penalty.add(orZero(b.cancellationPenaltyAmount()));
         }
+        // Deliberately amountPaid, not payableTotal: once a booking is CANCELLED,
+        // BookingDto.payableTotal() itself becomes the same figure as cancellationPenaltyAmount
+        // (see BookingService.payableTotal's own comment - it now reflects what's still owed,
+        // not the original total, so the admin "record a refund" UI can reuse it), so
+        // subtracting one from the other here would always be zero. amountPaid is what was
+        // actually collected regardless of that, so refund = amountPaid - penalty is the real
+        // figure - and correctly reads as "no refund" for a cancelNoRefund cancellation, since
+        // that path sets penalty = amountPaid.
+        BigDecimal refund = paid.subtract(penalty).max(BigDecimal.ZERO);
         String body = greeting(first.guestName())
                 + paragraph("Your booking at " + escape(hotelConfig.name()) + " for " + friendly(first.checkIn()) + " to " + friendly(first.checkOut()) + " has been cancelled:")
                 + sectionHeading("Cancelled")
                 + "<table style=\"width:100%;border-collapse:collapse;margin:4px 0 20px;\">" + rooms + "</table>"
-                + paragraph("If a payment was already made against this booking, our team will be in touch about next steps.")
+                + detailsCard(
+                    keyValueRow("Refund amount", "<strong>" + money(refund) + "</strong>")
+                    + (penalty.signum() > 0 ? keyValueRow("Cancellation charge", money(penalty)) : "")
+                  )
+                + paragraph(refund.signum() > 0
+                    ? "This will be refunded to your original payment method within a few business days."
+                    : "No refund applies to this cancellation.")
                 + ctaButton("Browse rooms", frontendUrl + "/stay")
                 + paragraph("We hope to host you another time.");
         return wrapper("Booking Cancelled", body);
@@ -223,7 +243,7 @@ public class BookingEmailService {
         return wrapper("You're Checked In", body);
     }
 
-    private String checkoutHtml(InvoiceDto invoice, String invoiceUrl) {
+    private String checkoutHtml(InvoiceDto invoice, String invoiceUrl, String reviewUrl) {
         StringBuilder lines = new StringBuilder();
         for (InvoiceLineDto line : invoice.lines()) {
             BigDecimal amt = line.amount();
@@ -263,6 +283,7 @@ public class BookingEmailService {
                     ? sectionHeading("Payments received") + "<table style=\"width:100%;border-collapse:collapse;margin:4px 0 20px;\">" + payments + "</table>"
                     : "")
                 + ctaButton("View &amp; Print Invoice", invoiceUrl)
+                + ctaButton("Leave a Review", reviewUrl)
                 + paragraph("We hope to welcome you back to " + escape(hotelConfig.name()) + " soon.");
 
         return wrapper("Thank You for Staying", body);

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useHotelConfig } from '../context/HotelConfigContext'
 import apiClient from '../api/axiosClient'
@@ -6,10 +6,19 @@ import apiClient from '../api/axiosClient'
 export default function Home() {
   const { hotelName, tagline, heroImageUrl } = useHotelConfig()
   const [testimonials, setTestimonials] = useState([])
+  const testimonialsTrackRef = useRef(null)
 
   useEffect(() => {
     apiClient.get('/testimonials/featured').then(({ data }) => setTestimonials(data)).catch(() => {})
   }, [])
+
+  const scrollTestimonials = (direction) => {
+    const track = testimonialsTrackRef.current
+    if (!track) return
+    const card = track.querySelector('[data-testimonial-card]')
+    const amount = card ? card.offsetWidth + 24 : track.clientWidth * 0.85
+    track.scrollBy({ left: direction * amount, behavior: 'smooth' })
+  }
 
   return (
     <div>
@@ -80,15 +89,49 @@ export default function Home() {
           <p className="text-charcoal/70 text-center max-w-2xl mx-auto mb-12">
             Stories from the balcony, in guests' own words.
           </p>
-          <div className={`grid gap-6 ${testimonials.length > 1 ? 'md:grid-cols-2' : ''} ${testimonials.length > 2 ? 'lg:grid-cols-3' : ''}`}>
-            {testimonials.map((t) => (
-              <div key={t.id} className="bg-white border border-stone rounded-xl2 p-8 flex flex-col">
-                <p className="text-olive text-sm mb-3">{'★'.repeat(t.rating)}{'☆'.repeat(5 - t.rating)}</p>
-                <p className="text-charcoal/80 leading-relaxed mb-6 flex-1">&ldquo;{t.quote}&rdquo;</p>
-                <p className="text-sm font-medium text-charcoal">{t.guestName}</p>
-                {t.roomStayed && <p className="text-xs text-charcoal/50">{t.roomStayed}</p>}
-              </div>
-            ))}
+          {/* Horizontal scroll-snap track rather than a grid that wraps into more rows as
+              reviews pile up - this keeps the section's height fixed regardless of how many
+              testimonials exist, so it doesn't keep pushing the rest of the page down. */}
+          <div className="relative">
+            {testimonials.length > 1 && (
+              <button
+                onClick={() => scrollTestimonials(-1)}
+                aria-label="Previous testimonial"
+                className="hidden sm:flex absolute -left-5 top-1/2 -translate-y-1/2 z-10 w-10 h-10 items-center justify-center rounded-full bg-white border border-stone hover:border-olive text-charcoal/60 hover:text-olive transition-colors"
+              >
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                  <path d="M13 4l-6 6 6 6" />
+                </svg>
+              </button>
+            )}
+            <div
+              ref={testimonialsTrackRef}
+              className="flex gap-6 overflow-x-auto snap-x snap-mandatory scroll-smooth no-scrollbar pb-2"
+            >
+              {testimonials.map((t) => (
+                <div
+                  key={t.id}
+                  data-testimonial-card
+                  className="bg-white border border-stone rounded-xl2 p-8 flex flex-col shrink-0 snap-center w-[85%] sm:w-[380px]"
+                >
+                  <p className="text-olive text-sm mb-3">{'★'.repeat(t.rating)}{'☆'.repeat(5 - t.rating)}</p>
+                  <p className="text-charcoal/80 leading-relaxed mb-6 flex-1">&ldquo;{t.quote}&rdquo;</p>
+                  <p className="text-sm font-medium text-charcoal">{t.guestName}</p>
+                  {t.roomStayed && <p className="text-xs text-charcoal/50">{t.roomStayed}</p>}
+                </div>
+              ))}
+            </div>
+            {testimonials.length > 1 && (
+              <button
+                onClick={() => scrollTestimonials(1)}
+                aria-label="Next testimonial"
+                className="hidden sm:flex absolute -right-5 top-1/2 -translate-y-1/2 z-10 w-10 h-10 items-center justify-center rounded-full bg-white border border-stone hover:border-olive text-charcoal/60 hover:text-olive transition-colors"
+              >
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                  <path d="M7 4l6 6-6 6" />
+                </svg>
+              </button>
+            )}
           </div>
         </section>
       )}

@@ -1,5 +1,6 @@
 package com.thebalconyhouse.backend.booking;
 
+import com.thebalconyhouse.backend.booking.dto.AdminBookingGroupRequest;
 import com.thebalconyhouse.backend.booking.dto.AdminBookingRequest;
 import com.thebalconyhouse.backend.booking.dto.BookingDto;
 import com.thebalconyhouse.backend.booking.dto.BookingGroupRequest;
@@ -19,6 +20,7 @@ import com.thebalconyhouse.backend.cafe.FoodOrderRepository;
 import com.thebalconyhouse.backend.common.ForbiddenException;
 import com.thebalconyhouse.backend.common.ResourceNotFoundException;
 import com.thebalconyhouse.backend.document.GuestDocumentRepository;
+import com.thebalconyhouse.backend.hotel.HotelConfig;
 import com.thebalconyhouse.backend.payment.PaymentGateway;
 import com.thebalconyhouse.backend.payment.PaymentOrder;
 import com.thebalconyhouse.backend.payment.PaymentVerificationResult;
@@ -32,10 +34,14 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.function.Function;
 
@@ -55,6 +61,7 @@ public class BookingService {
     private final ChildcarePricing childcarePricing;
     private final FullBoardPricing fullBoardPricing;
     private final PaymentGateway paymentGateway;
+    private final HotelConfig hotelConfig;
     private final ZoneId hotelZoneId;
     private final long paymentHoldMinutes;
     private final long paymentReminderMinutes;
@@ -64,7 +71,7 @@ public class BookingService {
                            RoomBlockRepository roomBlockRepository, GuestDocumentRepository guestDocumentRepository,
                            FoodOrderRepository foodOrderRepository, CafeRepository cafeRepository,
                            RoomPricing roomPricing, ChildcarePricing childcarePricing, FullBoardPricing fullBoardPricing,
-                           PaymentGateway paymentGateway,
+                           PaymentGateway paymentGateway, HotelConfig hotelConfig,
                            @Value("${app.hotel.timezone}") String hotelTimezone,
                            @Value("${app.payment.hold-minutes}") long paymentHoldMinutes,
                            @Value("${app.payment.reminder-minutes}") long paymentReminderMinutes) {
@@ -80,6 +87,7 @@ public class BookingService {
         this.childcarePricing = childcarePricing;
         this.fullBoardPricing = fullBoardPricing;
         this.paymentGateway = paymentGateway;
+        this.hotelConfig = hotelConfig;
         this.hotelZoneId = ZoneId.of(hotelTimezone);
         this.paymentHoldMinutes = paymentHoldMinutes;
         this.paymentReminderMinutes = paymentReminderMinutes;
@@ -94,6 +102,39 @@ public class BookingService {
      */
     private LocalDate today() {
         return LocalDate.now(hotelZoneId);
+    }
+
+    private static final DateTimeFormatter CHECK_IN_TIME_FORMAT = DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH);
+
+    /** HotelConfig.Policies.checkInTime is free-text YAML ("12:00 PM") - falls back to noon
+     *  on anything unparseable rather than failing a cancellation over a typo'd config value. */
+    private LocalTime checkInTimeOfDay() {
+        String configured = hotelConfig.policies() != null ? hotelConfig.policies().checkInTime() : null;
+        if (configured == null || configured.isBlank()) {
+            return LocalTime.NOON;
+        }
+        try {
+            return LocalTime.parse(configured.trim(), CHECK_IN_TIME_FORMAT);
+        } catch (DateTimeParseException e) {
+            return LocalTime.NOON;
+        }
+    }
+
+    /**
+     * Same-day cancellations are the one case where the calendar date alone isn't enough: a
+     * guest who cancels on their check-in date after the property's configured check-in time
+     * has already passed has effectively used (or forfeited) that first night, not earned a
+     * free before-check-in cancellation. This nudges "today" forward one day for that case
+     * only, so the existing date-diff math in CancellationPolicy.evaluate and
+     * classifyCancellation both correctly count that night as elapsed without either needing
+     * their own clock-time awareness. Already being CHECKED_IN counts the same way regardless
+     * of the clock, since arrival has unambiguously started by then.
+     */
+    private LocalDate effectiveCancellationDate(Booking booking) {
+        LocalDate today = today();
+        boolean arrivalWindowPassed = booking.getStatus() == BookingStatus.CHECKED_IN
+                || !LocalTime.now(hotelZoneId).isBefore(checkInTimeOfDay());
+        return today.equals(booking.getCheckIn()) && arrivalWindowPassed ? today.plusDays(1) : today;
     }
 
     public AvailabilityDto checkAvailability(Long propertyId, LocalDate checkIn, LocalDate checkOut) {
@@ -210,6 +251,54 @@ public class BookingService {
         bookingGroupRepository.save(group);
 
         return attemptGroupPaymentInternal(group);
+    }
+
+    /**
+     * Admin equivalent of createGroup() - a phone booking for several rooms at once, mirroring
+     * createForAdmin()'s "payment collected on the call" contract instead of guest checkout's
+     * mock-gateway flow. Only the first room (lowest id, so guaranteed to be isFirstInGroup -
+     * see payableTotal) carries discountPercent: discountAmount is computed from the full
+     * amount+childcareFee+fullBoardFee sum, but a non-bearer room's payableTotal only ever
+     * subtracts its own discountAmount from its own bare amount - applying a non-zero discount
+     * to every sibling would over-discount every non-bearer room using a discount sized for
+     * the whole trip.
+     */
+    @Transactional
+    public List<BookingDto> createGroupForAdmin(AdminBookingGroupRequest request) {
+        if (!request.paymentReceived()) {
+            throw new IllegalArgumentException("Payment must be collected before this booking can be confirmed");
+        }
+        int maxChildren = request.rooms().size() * ChildcarePricing.MAX_CHILDREN_PER_ROOM;
+        if (request.childrenCount() > maxChildren) {
+            throw new IllegalArgumentException(
+                    "Up to " + ChildcarePricing.MAX_CHILDREN_PER_ROOM + " kids per room - "
+                            + maxChildren + " max for " + request.rooms().size() + " room(s)");
+        }
+
+        Map<Long, Integer> consumedInRequest = new HashMap<>();
+        for (GroupRoomSelection selection : request.rooms()) {
+            Property property = findProperty(selection.propertyId());
+            validateRoom(property, request.checkIn(), request.checkOut(), selection.guests(),
+                    consumedInRequest.getOrDefault(property.getId(), 0));
+            consumedInRequest.merge(property.getId(), 1, Integer::sum);
+        }
+
+        BookingGroup group = bookingGroupRepository.save(new BookingGroup(request.guestEmail(), request.guestName(),
+                request.guestPhone(), request.checkIn(), request.checkOut(), request.notes(), Instant.now()));
+
+        int totalGuests = request.rooms().stream().mapToInt(GroupRoomSelection::guests).sum();
+
+        List<GroupRoomSelection> rooms = request.rooms();
+        for (int i = 0; i < rooms.size(); i++) {
+            GroupRoomSelection selection = rooms.get(i);
+            int discountForThisRoom = i == 0 ? request.discountPercent() : 0;
+            createInternal(selection.propertyId(), request.guestEmail(), request.guestName(), request.guestPhone(),
+                    request.checkIn(), request.checkOut(), selection.guests(), request.notes(), group.getId(),
+                    PaymentStatus.PENDING, null, null, request.childrenCount(),
+                    request.fullBoard(), totalGuests, discountForThisRoom);
+        }
+
+        return recordGroupPaymentInternal(group.getId(), null, request.paymentMethod(), request.paymentReference());
     }
 
     /** Re-attempts payment for a trip still PENDING after createGroup() - see its own comment. */
@@ -539,9 +628,16 @@ public class BookingService {
         }
     }
 
+    /**
+     * Kids Play Zone, Full Board, and café orders are all "record what was actually consumed"
+     * entries, not a pre-arrival reservation choice - and none of them are refundable once
+     * logged. Restricting them to CHECKED_IN (rather than also allowing CONFIRMED, as this used
+     * to) means nothing can be added before the guest has actually arrived to consume it, which
+     * also means a pre-arrival cancellation never has to untangle a part-used addon fee.
+     */
     private void requireEditable(Booking booking) {
-        if (booking.getStatus() != BookingStatus.CONFIRMED && booking.getStatus() != BookingStatus.CHECKED_IN) {
-            throw new IllegalArgumentException("Only confirmed or checked-in bookings can be edited");
+        if (booking.getStatus() != BookingStatus.CHECKED_IN) {
+            throw new IllegalArgumentException("Kids Play Zone, Full Board, and café orders can only be added once the guest has checked in");
         }
     }
 
@@ -680,6 +776,8 @@ public class BookingService {
                         return toDto(b, propertyRepository.findById(b.getPropertyId()).orElse(null));
                     }
                     applyCancellationPolicy(b);
+                    requireNoOutstandingBalance(b);
+                    b.setCancellationType(classifyCancellation(b));
                     return transitionTo(b, BookingStatus.CANCELLED);
                 })
                 .toList();
@@ -699,6 +797,8 @@ public class BookingService {
             throw new IllegalArgumentException("A completed stay can't be cancelled");
         }
         booking.setCancellationPenaltyAmount(payableTotal(booking));
+        requireNoOutstandingBalance(booking);
+        booking.setCancellationType(classifyCancellation(booking));
         return transitionTo(booking, BookingStatus.CANCELLED);
     }
 
@@ -711,6 +811,8 @@ public class BookingService {
                         return toDto(b, propertyRepository.findById(b.getPropertyId()).orElse(null));
                     }
                     b.setCancellationPenaltyAmount(payableTotal(b));
+                    requireNoOutstandingBalance(b);
+                    b.setCancellationType(classifyCancellation(b));
                     return transitionTo(b, BookingStatus.CANCELLED);
                 })
                 .toList();
@@ -732,8 +834,9 @@ public class BookingService {
      */
     private List<BookingDto> recordGroupPaymentInternal(Long groupId, BigDecimal amount, String method, String reference) {
         List<Booking> bookings = bookingRepository.findByBookingGroupIdOrderByIdAsc(groupId);
-        if (bookings.stream().allMatch(b -> b.getStatus() == BookingStatus.CANCELLED)) {
-            throw new IllegalArgumentException("Can't record payment for a cancelled trip");
+        boolean allCancelled = bookings.stream().allMatch(b -> b.getStatus() == BookingStatus.CANCELLED);
+        if (allCancelled && (amount == null || amount.signum() >= 0)) {
+            throw new IllegalArgumentException("Only a refund can be recorded for a cancelled trip");
         }
         if (amount != null && amount.signum() < 0) {
             applyGroupRefund(bookings, amount, method, reference);
@@ -773,7 +876,6 @@ public class BookingService {
         BigDecimal remaining = amount;
         for (Booking b : bookings) {
             if (remaining.signum() >= 0) break;
-            if (b.getStatus() == BookingStatus.CANCELLED) continue;
             BigDecimal due = payableTotal(b, isFirstInGroup(b, bookings)).subtract(b.getAmountPaid());
             if (due.signum() >= 0) continue;
             BigDecimal thisRefund = remaining.max(due);
@@ -785,8 +887,8 @@ public class BookingService {
     @Transactional
     public BookingDto recordPayment(Long bookingId, BigDecimal amount, String method, String reference) {
         Booking booking = findBooking(bookingId);
-        if (booking.getStatus() == BookingStatus.CANCELLED) {
-            throw new IllegalArgumentException("Can't record payment for a cancelled booking");
+        if (booking.getStatus() == BookingStatus.CANCELLED && (amount == null || amount.signum() >= 0)) {
+            throw new IllegalArgumentException("Only a refund can be recorded for a cancelled booking");
         }
         Booking saved = recordPaymentInternal(booking, amount, method, reference);
         return toDto(saved, propertyRepository.findById(saved.getPropertyId()).orElse(null));
@@ -825,6 +927,9 @@ public class BookingService {
      * group has nothing to share, so its full total is already correct as-is.
      */
     private BigDecimal payableTotal(Booking booking) {
+        if (booking.getStatus() == BookingStatus.CANCELLED) {
+            return booking.getCancellationPenaltyAmount() != null ? booking.getCancellationPenaltyAmount() : BigDecimal.ZERO;
+        }
         if (booking.getBookingGroupId() == null) {
             return booking.getFullTotal();
         }
@@ -832,7 +937,21 @@ public class BookingService {
         return payableTotal(booking, isFirstInGroup(booking, siblings));
     }
 
+    /**
+     * Once a booking is CANCELLED, what it "owes" is no longer the original total - it's
+     * whatever CancellationPolicy determined the guest is still responsible for
+     * (cancellationPenaltyAmount, set at cancel time - see cancelInternal/cancelNoRefund and
+     * friends). Both overloads short-circuit here so recordPaymentInternal's owed figure, and
+     * every "balance due" computation on the frontend (which reads this same value back via
+     * BookingDto.payableTotal), automatically reflect the refund instead of the stale
+     * pre-cancellation total. Safe against circularity: every caller that sets
+     * cancellationPenaltyAmount calls payableTotal while the booking's status is still
+     * CONFIRMED/CHECKED_IN, before the CANCELLED transition happens.
+     */
     private BigDecimal payableTotal(Booking booking, boolean isAddonBearer) {
+        if (booking.getStatus() == BookingStatus.CANCELLED) {
+            return booking.getCancellationPenaltyAmount() != null ? booking.getCancellationPenaltyAmount() : BigDecimal.ZERO;
+        }
         if (booking.getBookingGroupId() == null || isAddonBearer) {
             return booking.getFullTotal();
         }
@@ -889,7 +1008,37 @@ public class BookingService {
             throw new IllegalArgumentException("A completed stay can't be cancelled");
         }
         applyCancellationPolicy(booking);
+        requireNoOutstandingBalance(booking);
+        booking.setCancellationType(classifyCancellation(booking));
         return transitionTo(booking, BookingStatus.CANCELLED);
+    }
+
+    /**
+     * Mirrors checkOut's "must be paid before completing" rule (see its own comment). Once a
+     * booking is CANCELLED, there's no more stay left to hold over the guest as leverage to
+     * actually collect what they still owe - so, same as check-out, cancelling is blocked
+     * until the balance is settled first. Only money still owed TO the hotel blocks this; a
+     * refund-due (overpaid) booking is the opposite direction and is exactly what cancelling
+     * is meant to surface, so it's never blocked here.
+     */
+    private void requireNoOutstandingBalance(Booking booking) {
+        if (booking.getAmountPaid().compareTo(booking.getCancellationPenaltyAmount()) < 0) {
+            throw new IllegalArgumentException("Record the outstanding balance before cancelling this booking");
+        }
+    }
+
+    /**
+     * Auto-classifies a cancellation from data the system already has - no admin input
+     * needed. Must be called with the booking's PRE-cancellation status still intact (i.e.
+     * before transitionTo overwrites it to CANCELLED). Uses the same today-vs-checkIn
+     * boundary as CancellationPolicy/applyCancellationPolicy, so "no-show" here always lines
+     * up with "prorated, not full, refund" there.
+     */
+    private CancellationType classifyCancellation(Booking booking) {
+        if (booking.getStatus() == BookingStatus.CHECKED_IN) {
+            return CancellationType.MID_STAY;
+        }
+        return effectiveCancellationDate(booking).isAfter(booking.getCheckIn()) ? CancellationType.NO_SHOW : CancellationType.PRE_ARRIVAL;
     }
 
     private void applyCancellationPolicy(Booking booking) {
@@ -902,11 +1051,9 @@ public class BookingService {
 
         Property currentProperty = findProperty(booking.getPropertyId());
         BigDecimal currentPerNightRate = roomPricing.priceForStay(currentProperty, booking.getCheckIn(), totalNights);
-        BigDecimal childcareFee = isAddonBearer ? booking.getChildcareFee() : BigDecimal.ZERO;
-        BigDecimal fullBoardFee = isAddonBearer ? booking.getFullBoardFee() : BigDecimal.ZERO;
 
-        CancellationPolicy.Result result = CancellationPolicy.evaluate(booking.getCheckIn(), today(), totalNights,
-                currentPerNightRate, childcareFee, fullBoardFee, booking.getDiscountPercent(), payable);
+        CancellationPolicy.Result result = CancellationPolicy.evaluate(booking.getCheckIn(), effectiveCancellationDate(booking), totalNights,
+                currentPerNightRate, booking.getDiscountPercent(), payable);
         booking.setCancellationPenaltyAmount(result.penaltyAmount());
     }
 
@@ -978,7 +1125,7 @@ public class BookingService {
                 b.getPaymentReference(), b.getAmountPaid(), paymentDtos, b.getChildrenCount(), b.getChildcareSessions(), b.getChildcareFee(),
                 b.isFullBoard(), b.getBuffetSessions(), b.getFullBoardFee(), b.getDiscountPercent(), b.getDiscountAmount(),
                 b.getFoodOrdersFee(), foodOrderDtos,
-                payableTotal(b, isAddonBearer), b.getCancellationPenaltyAmount(), b.isRoomUpgraded());
+                payableTotal(b, isAddonBearer), b.getCancellationPenaltyAmount(), b.getCancellationType(), b.isRoomUpgraded());
     }
 
     @Transactional

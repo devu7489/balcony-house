@@ -108,7 +108,7 @@ export default function GuestDocuments({ bookingId, onCountChange }) {
       )}
 
       <form onSubmit={upload} className="flex flex-col sm:flex-row gap-2">
-        <Select value={documentType} onChange={(e) => setDocumentType(e.target.value)} className="sm:w-44 px-3 py-2 text-sm shrink-0">
+        <Select value={documentType} onChange={(e) => setDocumentType(e.target.value)} className="w-full sm:w-44 px-3 py-2 text-sm shrink-0">
           {DOCUMENT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
         </Select>
         <input

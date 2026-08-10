@@ -107,7 +107,7 @@ export default function MyBookings() {
           <Select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value)}
-            className="sm:w-56 px-4 py-2 text-sm"
+            className="w-full sm:w-56 px-4 py-2 text-sm"
           >
             <option value="bookingTime">Sort: Booking time (newest)</option>
             <option value="checkIn">Sort: Check-in date</option>
@@ -147,6 +147,11 @@ export default function MyBookings() {
                       {!cancelled && <PaymentBadge status={b.paymentStatus} />}
                     </div>
                     <div className="flex items-center gap-4">
+                      {b.status === 'CHECKED_OUT' && (
+                        <Link to={`/leave-review/${b.id}`} className="text-xs text-olive hover:underline">
+                          Leave a review
+                        </Link>
+                      )}
                       {isCancellable(b.status) && (
                         <button
                           onClick={() => cancelBooking(b)}
@@ -194,6 +199,11 @@ export default function MyBookings() {
                     )}
                   </div>
                   <div className="flex items-center gap-4 sm:shrink-0">
+                    {entry.bookings.every((b) => b.status === 'CHECKED_OUT') && (
+                      <Link to={`/leave-review/${entry.bookings[0].id}`} className="text-xs text-olive hover:underline">
+                        Leave a review
+                      </Link>
+                    )}
                     {!cancelled && paymentStatus !== 'PAID' && (
                       <button
                         onClick={() => payTrip(entry.bookingGroupId)}

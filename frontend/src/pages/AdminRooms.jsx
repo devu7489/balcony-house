@@ -136,7 +136,7 @@ export default function AdminRooms() {
             value={form.propertyId}
             onChange={(e) => setForm({ ...form, propertyId: e.target.value })}
             required
-            className="px-3 py-2.5"
+            className="w-full px-3 py-2.5"
           >
             <option value="" disabled>Room</option>
             {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}

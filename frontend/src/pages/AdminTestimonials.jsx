@@ -45,6 +45,10 @@ export default function AdminTestimonials() {
     apiClient.delete(`/admin/testimonials/${id}`).then(load)
   }
 
+  const toggleFeatured = (t) => {
+    apiClient.post(`/admin/testimonials/${t.id}/${t.featured ? 'unfeature' : 'feature'}`).then(load)
+  }
+
   if (loading) return <LoadingScreen label="Loading testimonials" />
 
   return (
@@ -77,7 +81,7 @@ export default function AdminTestimonials() {
         <div>
           <label className="block text-xs uppercase tracking-wide text-charcoal/50 mb-1">Rating</label>
           <Select
-            className="px-3 py-2"
+            className="w-full px-3 py-2"
             value={form.rating}
             onChange={(e) => setForm({ ...form, rating: e.target.value })}
           >
@@ -129,9 +133,12 @@ export default function AdminTestimonials() {
           {testimonials.map((t) => (
             <div key={t.id} className="flex items-start justify-between gap-4 px-5 py-4">
               <div>
-                <div className="flex items-center gap-2 mb-1">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <span className="font-medium text-charcoal">{t.guestName}</span>
                   <span className="text-xs text-olive">{'★'.repeat(t.rating)}{'☆'.repeat(5 - t.rating)}</span>
+                  {t.bookingId != null && (
+                    <span className="text-xs text-charcoal/40 border border-stone rounded-full px-2 py-0.5">Verified stay</span>
+                  )}
                   {!t.featured && <span className="text-xs text-charcoal/40 border border-stone rounded-full px-2 py-0.5">Hidden</span>}
                 </div>
                 <p className="text-sm text-charcoal/70 max-w-2xl">"{t.quote}"</p>
@@ -139,12 +146,20 @@ export default function AdminTestimonials() {
                   {t.roomStayed || 'No room noted'}{t.stayDate ? ` · ${new Date(t.stayDate).toLocaleDateString()}` : ''}
                 </p>
               </div>
-              <button
-                onClick={() => setConfirmId(t.id)}
-                className="text-xs text-red-600 hover:underline shrink-0"
-              >
-                Delete
-              </button>
+              <div className="flex items-center gap-3 shrink-0">
+                <button
+                  onClick={() => toggleFeatured(t)}
+                  className="text-xs text-olive hover:underline"
+                >
+                  {t.featured ? 'Hide' : 'Feature'}
+                </button>
+                <button
+                  onClick={() => setConfirmId(t.id)}
+                  className="text-xs text-red-600 hover:underline"
+                >
+                  Delete
+                </button>
+              </div>
             </div>
           ))}
         </div>

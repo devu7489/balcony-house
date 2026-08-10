@@ -10,7 +10,7 @@ import ActivityLog from '../components/ActivityLog'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { roomNumberOptions } from '../lib/roomNumbers'
 import { todayIso } from '../lib/dates'
-import { cancellationConfirmMessage } from '../lib/cancellationPolicy'
+import { cancellationConfirmMessage, cancellationTypeLabel } from '../lib/cancellationPolicy'
 import { useHotelConfig } from '../context/HotelConfigContext'
 
 export default function AdminTripDetail() {
@@ -237,18 +237,27 @@ export default function AdminTripDetail() {
   const tooEarlyForCheckIn = bookings.some((b) => b.status === 'CONFIRMED' && todayIso() < b.checkIn)
   const tooEarlyForCheckOut = bookings.some((b) => b.status === 'CHECKED_IN' && todayIso() < b.checkOut)
   const anyActive = anyConfirmed || anyCheckedIn
-  const totalAmount = bookings.reduce((sum, b) => sum + Number(b.amount || 0), 0)
-    + Number(first.childcareFee || 0)
-    + Number(first.fullBoardFee || 0)
-    + Number(first.foodOrdersFee || 0)
+  const allCancelled = bookings.every((b) => b.status === 'CANCELLED')
+  // Once every room is cancelled, "what's owed" is no longer the original room+addon sum -
+  // it's each room's cancellationPenaltyAmount (already computed server-side, exposed as
+  // payableTotal - see BookingService.payableTotal's own comment). The non-cancelled formula
+  // stays as-is since it needs the trip-wide addon fees folded in exactly once.
+  const totalAmount = allCancelled
+    ? bookings.reduce((sum, b) => sum + Number(b.payableTotal || 0), 0)
+    : bookings.reduce((sum, b) => sum + Number(b.amount || 0), 0)
+      + Number(first.childcareFee || 0)
+      + Number(first.fullBoardFee || 0)
+      + Number(first.foodOrdersFee || 0)
   const amountPaidTotal = bookings.reduce((sum, b) => sum + Number(b.amountPaid || 0), 0)
   const balanceDue = totalAmount - amountPaidTotal
   // Every active room must be individually PAID for the trip to be settled - a room
   // change can reset just one room to PENDING while the others stay PAID, so reading
   // only bookings[0]'s status (as this used to) can miss an outstanding balance entirely.
-  const allActivePaid = bookings
-    .filter((b) => b.status !== 'CANCELLED')
-    .every((b) => b.paymentStatus === 'PAID')
+  // When nothing is active (whole trip cancelled), fall back to checking the cancelled
+  // rooms themselves - filtering them out here would leave an empty list, which vacuously
+  // (and wrongly) satisfies .every().
+  const paymentRelevant = anyActive ? bookings.filter((b) => b.status !== 'CANCELLED') : bookings
+  const allActivePaid = paymentRelevant.length > 0 && paymentRelevant.every((b) => b.paymentStatus === 'PAID')
   const paymentStatus = allActivePaid ? 'PAID' : 'PENDING'
   const allPayments = bookings
     .flatMap((b) => (b.payments || []).map((p) => ({ ...p, roomName: b.propertyName })))
@@ -287,11 +296,22 @@ export default function AdminTripDetail() {
           </div>
         )}
 
-        {bookings.every((b) => b.status === 'CANCELLED') && bookings.some((b) => Number(b.cancellationPenaltyAmount) > 0) && (
+        {bookings.every((b) => b.status === 'CANCELLED')
+          && (bookings.some((b) => b.cancellationType) || bookings.some((b) => Number(b.cancellationPenaltyAmount) > 0)) && (
           <div className="mb-6 bg-stone/50 border border-stone rounded-lg p-4">
-            <p className="text-xs uppercase tracking-wide text-charcoal/50 mb-1">Cancellation penalty</p>
+            <p className="text-xs uppercase tracking-wide text-charcoal/50 mb-1">Cancellation</p>
             <p className="text-charcoal/80">
-              ₹{bookings.reduce((sum, b) => sum + Number(b.cancellationPenaltyAmount || 0), 0).toLocaleString()} — cancelled within the free-cancellation window.
+              {(() => {
+                const distinctTypes = [...new Set(bookings.map((b) => b.cancellationType).filter(Boolean))]
+                const typeLabel = distinctTypes.length === 1 ? cancellationTypeLabel(distinctTypes[0]) : null
+                const totalPenalty = bookings.reduce((sum, b) => sum + Number(b.cancellationPenaltyAmount || 0), 0)
+                return (
+                  <>
+                    {typeLabel}
+                    {totalPenalty > 0 && <>{typeLabel ? ' — ' : ''}₹{totalPenalty.toLocaleString()} penalty</>}
+                  </>
+                )
+              })()}
             </p>
           </div>
         )}
@@ -300,31 +320,31 @@ export default function AdminTripDetail() {
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div className="flex items-center gap-3">
               <span className="font-serif text-lg">₹{totalAmount.toLocaleString()}</span>
-              {anyActive && <PaymentBadge status={paymentStatus} />}
-              {anyActive && paymentStatus === 'PAID' && (
+              {(anyActive || allCancelled) && <PaymentBadge status={paymentStatus} />}
+              {(anyActive || allCancelled) && paymentStatus === 'PAID' && !allCancelled && (
                 <Link to={`/admin/invoice/trip/${groupId}`} className="text-sm text-olive hover:underline">
                   View invoice
                 </Link>
               )}
             </div>
-            {first.childrenCount > 0 && (
+            {!allCancelled && first.childrenCount > 0 && (
               <p className="text-sm text-charcoal/60">
                 incl. Kids Play Zone &middot; {first.childrenCount} child{first.childrenCount === 1 ? '' : 'ren'} &middot; ₹{Number(first.childcareFee).toLocaleString()}
               </p>
             )}
-            {first.fullBoard && (
+            {!allCancelled && first.fullBoard && (
               <p className="text-sm text-charcoal/60">
                 incl. Full Board &middot; ₹{Number(first.fullBoardFee).toLocaleString()}
               </p>
             )}
-            {anyActive && paymentStatus !== 'PAID' && amountPaidTotal > 0 && (
+            {(anyActive || allCancelled) && balanceDue !== 0 && amountPaidTotal > 0 && (
               <p className="text-sm text-olive w-full">
                 Already paid ₹{amountPaidTotal.toLocaleString()}
                 {balanceDue > 0 && ` · Balance due ₹${balanceDue.toLocaleString()}`}
                 {balanceDue < 0 && ` · Refund due ₹${Math.abs(balanceDue).toLocaleString()}`}
               </p>
             )}
-            {anyActive && paymentStatus !== 'PAID' && !showPaymentForm && (
+            {(anyActive || allCancelled) && balanceDue !== 0 && !showPaymentForm && (
               <button
                 onClick={() => { setPaymentAmount(balanceDue !== 0 ? String(balanceDue) : ''); setShowPaymentForm(true) }}
                 className="text-sm text-olive hover:underline"
@@ -383,7 +403,7 @@ export default function AdminTripDetail() {
                 <Select
                   value={paymentMethod}
                   onChange={(e) => setPaymentMethod(e.target.value)}
-                  className="mt-1 px-3 py-2.5"
+                  className="mt-1 w-full px-3 py-2.5"
                 >
                   <option>Cash</option>
                   <option>UPI</option>
@@ -449,18 +469,22 @@ export default function AdminTripDetail() {
                           </>
                         )}
                       </div>
-                      <button
-                        onClick={() => {
-                          setAddonsChildren(first.childrenCount)
-                          setAddonsChildcareSessions(first.childcareSessions)
-                          setAddonsBuffetSessions(first.buffetSessions)
-                          setAddonsError('')
-                          setShowAddons(true)
-                        }}
-                        className="text-sm text-olive hover:underline"
-                      >
-                        Edit
-                      </button>
+                      {first.status === 'CHECKED_IN' ? (
+                        <button
+                          onClick={() => {
+                            setAddonsChildren(first.childrenCount)
+                            setAddonsChildcareSessions(first.childcareSessions)
+                            setAddonsBuffetSessions(first.buffetSessions)
+                            setAddonsError('')
+                            setShowAddons(true)
+                          }}
+                          className="text-sm text-olive hover:underline"
+                        >
+                          Edit
+                        </button>
+                      ) : (
+                        <p className="text-xs text-charcoal/40">Editable after check-in</p>
+                      )}
                     </div>
                   ) : (
                     <div>
@@ -556,9 +580,13 @@ export default function AdminTripDetail() {
               <div className="bg-stone/40 rounded-lg p-3">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-xs uppercase tracking-wide text-charcoal/50">In-Room Dining</p>
-                  <button onClick={() => setShowFoodMenu((v) => !v)} className="text-sm text-olive hover:underline">
-                    {showFoodMenu ? 'Close menu' : '+ Add item'}
-                  </button>
+                  {first.status === 'CHECKED_IN' ? (
+                    <button onClick={() => setShowFoodMenu((v) => !v)} className="text-sm text-olive hover:underline">
+                      {showFoodMenu ? 'Close menu' : '+ Add item'}
+                    </button>
+                  ) : (
+                    <p className="text-xs text-charcoal/40">Available after check-in</p>
+                  )}
                 </div>
 
                 {first.foodOrders?.length > 0 ? (
@@ -666,11 +694,8 @@ export default function AdminTripDetail() {
                       <option value="">Unassigned</option>
                       {roomNumbers.map((n) => <option key={n} value={n}>{n}</option>)}
                     </Select>
-                    {roomNumberErrors[b.id] && (
-                      <p className="text-xs text-red-600 mt-1 break-words">{roomNumberErrors[b.id]}</p>
-                    )}
                   </div>
-                  <div className="flex flex-col items-end gap-2">
+                  <div className="flex flex-col items-end gap-2 shrink-0">
                     <StatusBadge status={b.status} />
                     {canChangeRoom && upgradingBookingId !== b.id && (
                       <button onClick={() => startUpgrade(b.id)} className="text-xs text-olive hover:underline">
@@ -684,6 +709,12 @@ export default function AdminTripDetail() {
                     )}
                   </div>
                 </div>
+                {/* Full card width rather than squeezed into the flex-1 name/select column above
+                    (that column was fighting the status/action sidebar for space, wrapping this
+                    into an unreadable single-word-per-line stack on narrow screens). */}
+                {roomNumberErrors[b.id] && (
+                  <p className="text-xs text-red-600 mt-2">{roomNumberErrors[b.id]}</p>
+                )}
 
                 {b.status !== 'CANCELLED' && (
                   <div className="mt-4 pt-4 border-t border-stone">

@@ -156,10 +156,15 @@ public class InvoiceService {
         Booking addonSource = bookings.stream().filter(b -> b.getStatus() != BookingStatus.CANCELLED).findFirst().orElse(any);
         if (addonSource.getChildrenCount() > 0 && addonSource.getChildcareFee() != null && addonSource.getChildcareFee().signum() > 0) {
             lines.add(new InvoiceLineDto("Kids Play Zone · " + addonSource.getChildrenCount()
-                    + " child" + (addonSource.getChildrenCount() == 1 ? "" : "ren"), addonSource.getChildcareFee()));
+                    + " child" + (addonSource.getChildrenCount() == 1 ? "" : "ren") + " · " + addonSource.getChildcareSessions()
+                    + " session" + (addonSource.getChildcareSessions() == 1 ? "" : "s"), addonSource.getChildcareFee()));
         }
         if (addonSource.isFullBoard() && addonSource.getFullBoardFee() != null && addonSource.getFullBoardFee().signum() > 0) {
-            lines.add(new InvoiceLineDto("Full Board", addonSource.getFullBoardFee()));
+            lines.add(new InvoiceLineDto("Full Board · " + addonSource.getBuffetSessions()
+                    + " buffet session" + (addonSource.getBuffetSessions() == 1 ? "" : "s"), addonSource.getFullBoardFee()));
+        }
+        if (addonSource.getFoodOrdersFee() != null && addonSource.getFoodOrdersFee().signum() > 0) {
+            lines.add(new InvoiceLineDto("In-Room Dining", addonSource.getFoodOrdersFee()));
         }
         BigDecimal totalDiscount = bookings.stream()
                 .filter(b -> b.getStatus() != BookingStatus.CANCELLED && b.getDiscountAmount() != null)

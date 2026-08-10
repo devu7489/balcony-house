@@ -68,7 +68,7 @@ export default function CompleteProfile() {
         <Select
           value={form.gender}
           onChange={(e) => setForm({ ...form, gender: e.target.value })}
-          className="px-4 py-3"
+          className="w-full px-4 py-3"
         >
           <option value="">Gender (optional)</option>
           <option value="FEMALE">Female</option>

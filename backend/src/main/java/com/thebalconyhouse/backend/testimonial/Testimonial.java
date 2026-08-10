@@ -5,10 +5,12 @@ import java.time.Instant;
 import java.time.LocalDate;
 
 /**
- * Admin-curated, not guest-submitted - staff add a quote from a guest (email, review site,
- * in person) rather than guests posting directly. Avoids needing a moderation queue or spam
- * protection for a public-facing submission form; matches how Journal/Gallery content is
- * already admin/seed-driven rather than user-generated in this app.
+ * Two sources feed this table: staff typing in a quote from a guest (email, review site, in
+ * person - bookingId stays null for these), and a guest submitting their own review for a
+ * booking they actually completed (bookingId set - see TestimonialService.submitForBooking,
+ * which is the spam guard in place of a moderation queue: only the owner of a CHECKED_OUT
+ * booking can submit, and only once). Either way every new row lands with featured=false until
+ * an admin promotes it, so featured doubles as the moderation gate - see setFeatured.
  */
 @Entity
 @Table(name = "testimonials")
@@ -34,6 +36,12 @@ public class Testimonial {
 
     private Instant createdAt;
 
+    // Null for admin-entered testimonials (unchanged legacy path). Set only when a guest
+    // submits their own review, both to prevent a second submission for the same stay
+    // (see TestimonialRepository.existsByBookingId) and so the admin list can show which
+    // reviews are guest-verified vs staff-transcribed.
+    private Long bookingId;
+
     protected Testimonial() {}
 
     public Testimonial(String guestName, String quote, Integer rating, String roomStayed,
@@ -54,5 +62,8 @@ public class Testimonial {
     public String getRoomStayed() { return roomStayed; }
     public LocalDate getStayDate() { return stayDate; }
     public boolean isFeatured() { return featured; }
+    public void setFeatured(boolean featured) { this.featured = featured; }
     public Instant getCreatedAt() { return createdAt; }
+    public Long getBookingId() { return bookingId; }
+    public void setBookingId(Long bookingId) { this.bookingId = bookingId; }
 }
