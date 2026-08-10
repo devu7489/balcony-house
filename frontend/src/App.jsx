@@ -33,6 +33,7 @@ import AdminMessages from './pages/AdminMessages'
 import AdminSubscribers from './pages/AdminSubscribers'
 import CompleteProfile from './pages/CompleteProfile'
 import Invoice from './pages/Invoice'
+import LeaveReview from './pages/LeaveReview'
 import NotFound from './pages/NotFound'
 
 export default function App() {
@@ -67,6 +68,14 @@ export default function App() {
               element={
                 <ProtectedRoute>
                   <CompleteProfile />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/leave-review/:bookingId"
+              element={
+                <ProtectedRoute>
+                  <LeaveReview />
                 </ProtectedRoute>
               }
             />

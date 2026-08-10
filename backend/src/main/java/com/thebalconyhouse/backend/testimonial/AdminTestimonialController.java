@@ -32,4 +32,14 @@ public class AdminTestimonialController {
     public void delete(@PathVariable Long id) {
         testimonialService.delete(id);
     }
+
+    @PostMapping("/{id}/feature")
+    public TestimonialDto feature(@PathVariable Long id) {
+        return testimonialService.setFeatured(id, true);
+    }
+
+    @PostMapping("/{id}/unfeature")
+    public TestimonialDto unfeature(@PathVariable Long id) {
+        return testimonialService.setFeatured(id, false);
+    }
 }

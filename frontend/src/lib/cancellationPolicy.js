@@ -21,3 +21,15 @@ export function cancellationConfirmMessage(checkIn, checkOut, tripWide) {
   }
   return `Cancel ${subject}? Check-in has already started, so you'll only be refunded for nights not yet used — the exact amount will show right after cancelling. This can't be undone.`
 }
+
+// Matches backend/src/main/java/com/thebalconyhouse/backend/booking/CancellationType.java -
+// auto-classified at cancel time from data the system already has, not an admin choice.
+const CANCELLATION_TYPE_LABELS = {
+  PRE_ARRIVAL: 'Before check-in',
+  MID_STAY: 'Mid-stay',
+  NO_SHOW: 'No-show',
+}
+
+export function cancellationTypeLabel(type) {
+  return CANCELLATION_TYPE_LABELS[type] || null
+}

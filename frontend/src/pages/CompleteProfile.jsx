@@ -68,7 +68,7 @@ export default function CompleteProfile() {
         <Select
           value={form.gender}
           onChange={(e) => setForm({ ...form, gender: e.target.value })}
-          className="px-4 py-3"
+          className="w-full px-4 py-3"
         >
           <option value="">Gender (optional)</option>
           <option value="FEMALE">Female</option>
@@ -84,7 +84,7 @@ export default function CompleteProfile() {
             max={todayIso()}
             value={form.dateOfBirth}
             onChange={(e) => setForm({ ...form, dateOfBirth: e.target.value })}
-            className="mt-1 w-full min-w-0 box-border appearance-none bg-white border border-stone rounded-lg px-4 py-3 focus:outline-none focus:border-olive"
+            className="mt-1 w-full min-w-0 h-11 box-border appearance-none bg-white border border-stone rounded-lg px-4 py-3 focus:outline-none focus:border-olive"
           />
         </label>
 

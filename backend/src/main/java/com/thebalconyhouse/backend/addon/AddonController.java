@@ -33,6 +33,6 @@ public class AddonController {
 
     @GetMapping("/fullboard")
     public FullBoardPricingDto fullBoard() {
-        return new FullBoardPricingDto(fullBoardPricing.getPricePerPersonPerDay());
+        return new FullBoardPricingDto(fullBoardPricing.getPricePerPersonPerDay(), fullBoardPricing.getPricePerSession());
     }
 }

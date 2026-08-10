@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import apiClient from '../api/axiosClient'
 import LoadingScreen from '../components/LoadingScreen'
 import Select from '../components/Select'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { todayIso, tomorrowIso } from '../lib/dates'
 import { roomNumberOptions } from '../lib/roomNumbers'
 
@@ -21,6 +22,7 @@ export default function AdminRooms() {
   const [submitStatus, setSubmitStatus] = useState('idle')
   const [submitError, setSubmitError] = useState('')
   const [deletingId, setDeletingId] = useState(null)
+  const [confirmBlockId, setConfirmBlockId] = useState(null)
   const [updatingRoom, setUpdatingRoom] = useState(null)
 
   const load = () => apiClient.get('/admin/room-blocks').then(({ data }) => setBlocks(data))
@@ -65,7 +67,6 @@ export default function AdminRooms() {
   }
 
   const remove = async (id) => {
-    if (!window.confirm('Remove this block? The room becomes bookable again for those dates.')) return
     setDeletingId(id)
     try {
       await apiClient.delete(`/admin/room-blocks/${id}`)
@@ -135,7 +136,7 @@ export default function AdminRooms() {
             value={form.propertyId}
             onChange={(e) => setForm({ ...form, propertyId: e.target.value })}
             required
-            className="px-3 py-2.5"
+            className="w-full px-3 py-2.5"
           >
             <option value="" disabled>Room</option>
             {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -146,7 +147,7 @@ export default function AdminRooms() {
             min={todayIso()}
             onChange={(e) => setForm({ ...form, startDate: e.target.value, endDate: e.target.value >= form.endDate ? e.target.value : form.endDate })}
             required
-            className="min-w-0 box-border appearance-none border border-stone rounded-lg px-3 py-2.5 focus:outline-none focus:border-olive bg-white"
+            className="min-w-0 h-11 box-border appearance-none border border-stone rounded-lg px-3 py-2.5 focus:outline-none focus:border-olive bg-white"
           />
           <input
             type="date"
@@ -154,7 +155,7 @@ export default function AdminRooms() {
             min={form.startDate}
             onChange={(e) => setForm({ ...form, endDate: e.target.value })}
             required
-            className="min-w-0 box-border appearance-none border border-stone rounded-lg px-3 py-2.5 focus:outline-none focus:border-olive bg-white"
+            className="min-w-0 h-11 box-border appearance-none border border-stone rounded-lg px-3 py-2.5 focus:outline-none focus:border-olive bg-white"
           />
         </div>
         <input
@@ -186,7 +187,7 @@ export default function AdminRooms() {
                 {b.reason && <p className="text-xs text-charcoal/50 mt-0.5">{b.reason}</p>}
               </div>
               <button
-                onClick={() => remove(b.id)}
+                onClick={() => setConfirmBlockId(b.id)}
                 disabled={deletingId === b.id}
                 className="text-xs text-red-600 hover:underline disabled:opacity-50"
               >
@@ -196,6 +197,14 @@ export default function AdminRooms() {
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmBlockId != null}
+        message="Remove this block? The room becomes bookable again for those dates."
+        danger
+        onConfirm={() => { const id = confirmBlockId; setConfirmBlockId(null); remove(id) }}
+        onCancel={() => setConfirmBlockId(null)}
+      />
     </div>
   )
 }

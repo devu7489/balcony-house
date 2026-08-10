@@ -52,14 +52,27 @@ export default function Invoice({ admin = false }) {
     // (6px) that it costs a negligible amount of ink even in color.
     <div className="bg-stone/40 print:bg-white py-12 print:py-0">
       <div className="max-w-3xl mx-auto px-6 lg:px-10 print:px-0 print:max-w-none">
-        <div className="print:hidden flex items-center justify-between mb-6">
+        <div className="print:hidden flex items-center justify-between mb-6 gap-3 flex-wrap">
           <Link to={backLink} className="text-sm text-olive hover:underline">&larr; Back</Link>
-          <button
-            onClick={() => window.print()}
-            className="px-5 py-2 rounded-full bg-olive text-warmwhite hover:bg-charcoal transition-colors text-sm"
-          >
-            Print / Save as PDF
-          </button>
+          <div className="flex items-center gap-4">
+            {/* Some in-app/embedded mobile browsers silently swallow window.print() (no
+                native print pipeline to hand off to) - this link is the escape hatch,
+                opening the same invoice in the device's actual browser where it works. */}
+            <a
+              href={typeof window !== 'undefined' ? window.location.href : '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-charcoal/50 hover:underline"
+            >
+              Trouble printing? Open in browser
+            </a>
+            <button
+              onClick={() => window.print()}
+              className="px-5 py-2 rounded-full bg-olive text-warmwhite hover:bg-charcoal transition-colors text-sm"
+            >
+              Print / Save as PDF
+            </button>
+          </div>
         </div>
 
         <div className="bg-white shadow-sm print:shadow-none border border-stone print:border-0 rounded-xl2 print:rounded-none overflow-hidden">

@@ -12,7 +12,8 @@ import { todayIso, nextDayIso, tomorrowIso } from '../lib/dates'
 // Payment is required to confirm any booking now, so this defaults to checked - admin can
 // still uncheck it, but the common case (payment collected on the call) needs no extra click.
 const emptyForm = () => ({
-  propertyId: '', guestName: '', guestPhone: '', guestEmail: '', checkIn: todayIso(), checkOut: tomorrowIso(), guests: 1, notes: '',
+  rooms: [{ propertyId: '', guests: 1 }],
+  guestName: '', guestPhone: '', guestEmail: '', checkIn: todayIso(), checkOut: tomorrowIso(), notes: '',
   paymentReceived: true, paymentMethod: 'Cash', paymentReference: '', childrenCount: 0,
   fullBoard: false, discountPercent: 0,
 })
@@ -55,7 +56,7 @@ function AdminBookingRow({ b, to, compact = false }) {
         )}
       </div>
       <div className="flex flex-col items-end gap-2">
-        <StatusBadge status={b.status} />
+        {!compact && <StatusBadge status={b.status} />}
         {!compact && b.status !== 'CANCELLED' && <PaymentBadge status={b.paymentStatus} />}
       </div>
     </Link>
@@ -72,7 +73,7 @@ export default function Admin() {
 
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(emptyForm())
-  const [availability, setAvailability] = useState(null)
+  const [roomAvailability, setRoomAvailability] = useState({})
   const [checkingAvailability, setCheckingAvailability] = useState(false)
   const [submitStatus, setSubmitStatus] = useState('idle')
   const [submitError, setSubmitError] = useState('')
@@ -89,17 +90,23 @@ export default function Admin() {
     ]).finally(() => setLoading(false))
   }, [])
 
+  const roomPropertyIdsKey = form.rooms.map((r) => r.propertyId).join(',')
+
   useEffect(() => {
-    if (!form.propertyId || !form.checkIn || !form.checkOut || form.checkOut <= form.checkIn) {
-      setAvailability(null)
+    if (!form.checkIn || !form.checkOut || form.checkOut <= form.checkIn || form.rooms.every((r) => !r.propertyId)) {
+      setRoomAvailability({})
       return
     }
     setCheckingAvailability(true)
-    apiClient.get(`/properties/${form.propertyId}/availability`, { params: { checkIn: form.checkIn, checkOut: form.checkOut } })
-      .then(({ data }) => setAvailability(data))
-      .catch(() => setAvailability(null))
-      .finally(() => setCheckingAvailability(false))
-  }, [form.propertyId, form.checkIn, form.checkOut])
+    Promise.all(form.rooms.map((r, i) => !r.propertyId
+      ? Promise.resolve([i, null])
+      : apiClient.get(`/properties/${r.propertyId}/availability`, { params: { checkIn: form.checkIn, checkOut: form.checkOut } })
+          .then(({ data }) => [i, data])
+          .catch(() => [i, null])
+    )).then((results) => {
+      setRoomAvailability(Object.fromEntries(results))
+    }).finally(() => setCheckingAvailability(false))
+  }, [roomPropertyIdsKey, form.checkIn, form.checkOut])
 
   const formNights = form.checkIn && form.checkOut && form.checkOut > form.checkIn
     ? Math.round((new Date(form.checkOut) - new Date(form.checkIn)) / 86400000)
@@ -110,32 +117,66 @@ export default function Admin() {
     apiClient.get('/addons/childcare', { params: { nights: formNights } }).then(({ data }) => setChildcarePricing(data)).catch(() => {})
   }, [formNights])
 
-  const selectedProperty = properties.find((p) => String(p.id) === String(form.propertyId))
+  const propertyFor = (propertyId) => properties.find((p) => String(p.id) === String(propertyId))
+
+  const updateRoom = (index, patch) => {
+    setForm((f) => ({ ...f, rooms: f.rooms.map((r, i) => (i === index ? { ...r, ...patch } : r)) }))
+  }
+  const addRoom = () => setForm((f) => ({ ...f, rooms: [...f.rooms, { propertyId: '', guests: 1 }] }))
+  const removeRoom = (index) => setForm((f) => ({ ...f, rooms: f.rooms.filter((_, i) => i !== index) }))
+
+  const totalFormGuests = form.rooms.reduce((sum, r) => sum + Number(r.guests || 0), 0)
+  const maxFormChildren = form.rooms.length * childcarePricing.maxChildren
+
+  useEffect(() => {
+    if (form.childrenCount > maxFormChildren) {
+      setForm((f) => ({ ...f, childrenCount: maxFormChildren }))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [maxFormChildren])
 
   const submit = async (e) => {
     e.preventDefault()
     setSubmitStatus('submitting')
     setSubmitError('')
     try {
-      await apiClient.post('/admin/bookings', {
-        propertyId: Number(form.propertyId),
-        guestName: form.guestName,
-        guestPhone: form.guestPhone,
-        guestEmail: form.guestEmail || null,
-        checkIn: form.checkIn,
-        checkOut: form.checkOut,
-        guests: Number(form.guests),
-        notes: form.notes || null,
-        paymentReceived: form.paymentReceived,
-        paymentMethod: form.paymentReceived ? form.paymentMethod : null,
-        paymentReference: form.paymentReceived ? (form.paymentReference || null) : null,
-        childrenCount: form.childrenCount,
-        fullBoard: form.fullBoard,
-        discountPercent: form.discountPercent,
-      })
+      if (form.rooms.length === 1) {
+        await apiClient.post('/admin/bookings', {
+          propertyId: Number(form.rooms[0].propertyId),
+          guestName: form.guestName,
+          guestPhone: form.guestPhone,
+          guestEmail: form.guestEmail || null,
+          checkIn: form.checkIn,
+          checkOut: form.checkOut,
+          guests: Number(form.rooms[0].guests),
+          notes: form.notes || null,
+          paymentReceived: form.paymentReceived,
+          paymentMethod: form.paymentReceived ? form.paymentMethod : null,
+          paymentReference: form.paymentReceived ? (form.paymentReference || null) : null,
+          childrenCount: form.childrenCount,
+          fullBoard: form.fullBoard,
+          discountPercent: form.discountPercent,
+        })
+      } else {
+        await apiClient.post('/admin/bookings/group', {
+          guestName: form.guestName,
+          guestPhone: form.guestPhone,
+          guestEmail: form.guestEmail || null,
+          checkIn: form.checkIn,
+          checkOut: form.checkOut,
+          notes: form.notes || null,
+          rooms: form.rooms.map((r) => ({ propertyId: Number(r.propertyId), guests: Number(r.guests) })),
+          childrenCount: form.childrenCount,
+          fullBoard: form.fullBoard,
+          paymentReceived: form.paymentReceived,
+          paymentMethod: form.paymentReceived ? form.paymentMethod : null,
+          paymentReference: form.paymentReceived ? (form.paymentReference || null) : null,
+          discountPercent: form.discountPercent,
+        })
+      }
       setSubmitStatus('idle')
       setForm(emptyForm())
-      setAvailability(null)
+      setRoomAvailability({})
       setShowForm(false)
       await loadBookings()
     } catch (err) {
@@ -146,8 +187,9 @@ export default function Admin() {
     }
   }
 
-  const canSubmit = form.propertyId && form.guestName && form.guestPhone && form.checkIn && form.checkOut
-    && form.checkOut > form.checkIn && availability?.available === true
+  const canSubmit = form.rooms.every((r) => r.propertyId) && form.guestName && form.guestPhone
+    && form.checkIn && form.checkOut && form.checkOut > form.checkIn
+    && form.rooms.every((r, i) => roomAvailability[i]?.available === true)
 
   const query = search.trim().toLowerCase()
   const searchedBookings = query
@@ -177,20 +219,69 @@ export default function Admin() {
 
       {showForm && (
         <form onSubmit={submit} className="bg-white border border-stone rounded-xl2 p-6 mb-10 space-y-4">
-          <label className="block text-sm text-charcoal/70">
-            Room
-            <Select
-              required
-              value={form.propertyId}
-              onChange={(e) => setForm({ ...form, propertyId: e.target.value })}
-              className="mt-1 px-3 py-2.5"
-            >
-              <option value="" disabled>Select a room</option>
-              {properties.map((p) => (
-                <option key={p.id} value={p.id}>{p.name} — up to {p.maxGuests} guests</option>
-              ))}
-            </Select>
-          </label>
+          <div className="space-y-3">
+            <p className="text-sm text-charcoal/70">Rooms</p>
+            {form.rooms.map((room, i) => {
+              const roomProperty = propertyFor(room.propertyId)
+              const avail = roomAvailability[i]
+              return (
+                <div key={i} className="bg-stone/40 rounded-lg p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs uppercase tracking-wide text-charcoal/50">Room {i + 1}</p>
+                    {form.rooms.length > 1 && (
+                      <button type="button" onClick={() => removeRoom(i)} className="text-xs text-red-600 hover:underline">
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label className="text-sm text-charcoal/70">
+                      Room
+                      <Select
+                        required
+                        value={room.propertyId}
+                        onChange={(e) => updateRoom(i, { propertyId: e.target.value, guests: 1 })}
+                        className="mt-1 w-full px-3 py-2.5"
+                      >
+                        <option value="" disabled>Select a room</option>
+                        {properties.map((p) => (
+                          <option key={p.id} value={p.id}>{p.name} — up to {p.maxGuests} guests</option>
+                        ))}
+                      </Select>
+                    </label>
+                    <label className="text-sm text-charcoal/70">
+                      Adults
+                      <Select
+                        required
+                        value={Math.min(Number(room.guests), roomProperty?.maxGuests || 1)}
+                        onChange={(e) => updateRoom(i, { guests: e.target.value })}
+                        className="mt-1 w-full px-3 py-2.5"
+                      >
+                        {Array.from({ length: roomProperty?.maxGuests || 1 }, (_, n) => n + 1).map((n) => (
+                          <option key={n} value={n}>{n}</option>
+                        ))}
+                      </Select>
+                    </label>
+                  </div>
+                  {/* min-h reserves one line's worth of space up front, so the message popping
+                      in/out (checking -> available/unavailable) never pushes anything below it -
+                      the card's own height stays constant throughout. */}
+                  <div className="min-h-[1rem] mt-2">
+                    {checkingAvailability && <p className="text-xs text-charcoal/50">Checking availability…</p>}
+                    {!checkingAvailability && avail?.available === true && (
+                      <p className="text-xs text-olive">Available — {avail.unitsLeft} room{avail.unitsLeft === 1 ? '' : 's'} left.</p>
+                    )}
+                    {!checkingAvailability && avail?.available === false && (
+                      <p className="text-xs text-red-600">Fully booked for these dates.</p>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+            <button type="button" onClick={addRoom} className="text-sm text-olive hover:underline">
+              + Add another room
+            </button>
+          </div>
 
           <div className="grid grid-cols-2 gap-3">
             <label className="text-sm text-charcoal/70">
@@ -231,7 +322,7 @@ export default function Admin() {
                 type="date"
                 value={form.checkIn}
                 onChange={(e) => setForm({ ...form, checkIn: e.target.value, checkOut: nextDayIso(e.target.value) })}
-                className="mt-1 w-full min-w-0 box-border appearance-none bg-white border border-stone rounded-lg px-3 py-3 focus:outline-none focus:border-olive"
+                className="mt-1 w-full min-w-0 h-11 box-border appearance-none bg-white border border-stone rounded-lg px-3 py-3 focus:outline-none focus:border-olive"
               />
             </label>
             <label className="text-sm text-charcoal/70 min-w-0">
@@ -243,24 +334,10 @@ export default function Admin() {
                 disabled={!form.checkIn}
                 value={form.checkOut}
                 onChange={(e) => setForm({ ...form, checkOut: e.target.value })}
-                className="mt-1 w-full min-w-0 box-border appearance-none bg-white border border-stone rounded-lg px-3 py-3 focus:outline-none focus:border-olive disabled:opacity-50"
+                className="mt-1 w-full min-w-0 h-11 box-border appearance-none bg-white border border-stone rounded-lg px-3 py-3 focus:outline-none focus:border-olive disabled:opacity-50"
               />
             </label>
           </div>
-
-          <label className="block text-sm text-charcoal/70">
-            Adults
-            <Select
-              required
-              value={Math.min(Number(form.guests), selectedProperty?.maxGuests || 1)}
-              onChange={(e) => setForm({ ...form, guests: e.target.value })}
-              className="mt-1 px-3 py-2.5"
-            >
-              {Array.from({ length: selectedProperty?.maxGuests || 1 }, (_, i) => i + 1).map((n) => (
-                <option key={n} value={n}>{n}</option>
-              ))}
-            </Select>
-          </label>
 
           <label className="block text-sm text-charcoal/70">
             Notes / special request <span className="text-charcoal/40">(optional)</span>
@@ -280,8 +357,8 @@ export default function Admin() {
             ) : (
               <>
                 <p className="text-xs text-charcoal/50 mb-2">For kids under 12 — ₹{childcarePricing.perDayRate}/day per child for this {formNights}-night stay.</p>
-                <div className="flex items-center gap-2">
-                  {Array.from({ length: childcarePricing.maxChildren + 1 }, (_, n) => n).map((n) => (
+                <div className="flex items-center gap-2 flex-wrap">
+                  {Array.from({ length: maxFormChildren + 1 }, (_, n) => n).map((n) => (
                     <button
                       key={n}
                       type="button"
@@ -337,8 +414,8 @@ export default function Admin() {
                 </div>
                 {form.fullBoard && (
                   <p className="text-sm text-olive mt-2">
-                    + ₹{(fullBoardPricing.pricePerPersonPerDay * Number(form.guests) * formNights).toLocaleString()}
-                    {' '}for {form.guests} adult{Number(form.guests) === 1 ? '' : 's'}
+                    + ₹{(fullBoardPricing.pricePerPersonPerDay * totalFormGuests * formNights).toLocaleString()}
+                    {' '}for {totalFormGuests} adult{totalFormGuests === 1 ? '' : 's'}
                     {' '}(₹{fullBoardPricing.pricePerPersonPerDay}/person/day × {formNights} night{formNights === 1 ? '' : 's'})
                   </p>
                 )}
@@ -383,7 +460,7 @@ export default function Admin() {
                   <Select
                     value={form.paymentMethod}
                     onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })}
-                    className="mt-1 px-3 py-2.5"
+                    className="mt-1 w-full px-3 py-2.5"
                   >
                     <option>Cash</option>
                     <option>UPI</option>
@@ -404,14 +481,6 @@ export default function Admin() {
               </div>
             )}
           </div>
-
-          {checkingAvailability && <p className="text-sm text-charcoal/50">Checking availability…</p>}
-          {!checkingAvailability && availability?.available === true && (
-            <p className="text-sm text-olive">Available — {availability.unitsLeft} room{availability.unitsLeft === 1 ? '' : 's'} left.</p>
-          )}
-          {!checkingAvailability && availability?.available === false && (
-            <p className="text-sm text-red-600">Fully booked for these dates.</p>
-          )}
 
           <button
             type="submit"
@@ -435,7 +504,7 @@ export default function Admin() {
         <Select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value)}
-          className="sm:w-56 px-4 py-3"
+          className="w-full sm:w-56 px-4 py-3"
         >
           <option value="bookingTime">Sort: Booking time (newest)</option>
           <option value="checkIn">Sort: Check-in date</option>
@@ -453,9 +522,20 @@ export default function Admin() {
               <div key={entry.bookingGroupId} className="bg-stone/40 border border-stone rounded-xl2 p-4">
                 <div className="flex items-start justify-between gap-4 mb-3 px-1">
                   <div>
-                    <p className="text-xs uppercase tracking-wide text-charcoal/50 mb-1">
-                      Trip &middot; {entry.bookings.length} rooms
-                    </p>
+                    <div className="flex items-center gap-2 mb-1">
+                      <p className="text-xs uppercase tracking-wide text-charcoal/50">
+                        Trip &middot; {entry.bookings.length} rooms
+                      </p>
+                      {/* One trip-wide status rather than repeating it on every room row below -
+                          most active-first, so a trip with any room still mid-stay reads as such
+                          even if another room in the same trip has already checked out. */}
+                      <StatusBadge status={
+                        entry.bookings.some((b) => b.status === 'CHECKED_IN') ? 'CHECKED_IN'
+                          : entry.bookings.some((b) => b.status === 'CONFIRMED') ? 'CONFIRMED'
+                          : entry.bookings.some((b) => b.status === 'CHECKED_OUT') ? 'CHECKED_OUT'
+                          : 'CANCELLED'
+                      } />
+                    </div>
                     <p className="text-sm text-charcoal/70">
                       {[entry.bookings[0].guestName, entry.bookings[0].guestEmail, entry.bookings[0].guestPhone].filter(Boolean).join(' · ')}
                     </p>

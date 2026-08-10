@@ -1,6 +1,7 @@
 package com.thebalconyhouse.backend.booking.dto;
 
 import com.thebalconyhouse.backend.booking.BookingStatus;
+import com.thebalconyhouse.backend.booking.CancellationType;
 import com.thebalconyhouse.backend.booking.PaymentStatus;
 
 import java.math.BigDecimal;
@@ -39,12 +40,17 @@ public record BookingDto(
         BigDecimal amountPaid,
         List<PaymentRecordDto> payments,
         int childrenCount,
+        int childcareSessions,
         BigDecimal childcareFee,
         boolean fullBoard,
+        int buffetSessions,
         BigDecimal fullBoardFee,
         int discountPercent,
         BigDecimal discountAmount,
+        BigDecimal foodOrdersFee,
+        List<FoodOrderDto> foodOrders,
         BigDecimal payableTotal,
         BigDecimal cancellationPenaltyAmount,
+        CancellationType cancellationType,
         boolean roomUpgraded
 ) {}

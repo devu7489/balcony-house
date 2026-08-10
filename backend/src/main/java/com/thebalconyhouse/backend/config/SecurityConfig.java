@@ -100,6 +100,12 @@ public class SecurityConfig {
                 .maxSessionsPreventsLogin(false)
             )
             .authorizeHttpRequests(auth -> auth
+                // Must come before the broader /api/testimonials/** GET permitAll rule below
+                // (Spring evaluates matchers in order, first match wins) - this one path needs
+                // a real guest session so a review can only be looked up by its own submitter.
+                .requestMatchers(org.springframework.http.HttpMethod.GET,
+                        "/api/testimonials/booking/**"
+                ).authenticated()
                 // Public, read-only content
                 .requestMatchers(org.springframework.http.HttpMethod.GET,
                         "/api/properties/**",

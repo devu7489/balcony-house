@@ -9,7 +9,17 @@ UPDATE experiences SET image_url = '/images/experiences/sunrise-coffee.jpg' WHER
 UPDATE experiences SET image_url = '/images/experiences/bonfire.jpg' WHERE image_url = '/images/experiences/bonfire.svg';
 UPDATE experiences SET image_url = '/images/experiences/nature-walk.jpg' WHERE image_url = '/images/experiences/nature-walk.svg';
 UPDATE cafe_items SET image_url = '/images/cafe/pour-over.jpg' WHERE image_url = '/images/cafe/pour-over.svg';
-UPDATE cafe_items SET image_url = '/images/cafe/breakfast-bowl.jpg' WHERE image_url = '/images/cafe/breakfast-bowl.svg';
+
+-- Replaced by a short in-room dining menu - lunch and dinner are covered by the Full Board
+-- buffet, so the café no longer needs to offer more than a few order-to-your-room basics.
+DELETE FROM cafe_items WHERE name = 'Garden Breakfast Bowl';
+
+-- Corrected: the beans aren't actually locally roasted. Also backfills price for rows
+-- that were seeded before the price column existed.
+UPDATE cafe_items SET description = 'Freshly brewed, hot and strong - delivered right to your room.', price = 100 WHERE name = 'Mountain Pour-Over';
+UPDATE cafe_items SET price = 50 WHERE name = 'Masala Chai';
+UPDATE cafe_items SET price = 100 WHERE name = 'Bread Omelette';
+UPDATE cafe_items SET price = 100 WHERE name = 'Maggi';
 
 INSERT INTO experiences (title, description, image_url)
 SELECT 'Sunrise Coffee', 'Start the day with a warm cup on your balcony as the mist lifts off the valley.', '/images/experiences/sunrise-coffee.jpg'
@@ -23,13 +33,21 @@ INSERT INTO experiences (title, description, image_url)
 SELECT 'Nature Walks', 'Guided or self-paced trails through pine forest and along mountain streams.', '/images/experiences/nature-walk.jpg'
 WHERE NOT EXISTS (SELECT 1 FROM experiences WHERE title = 'Nature Walks');
 
-INSERT INTO cafe_items (name, description, image_url, category)
-SELECT 'Mountain Pour-Over', 'Locally roasted single-origin beans, brewed slow.', '/images/cafe/pour-over.jpg', 'coffee'
+INSERT INTO cafe_items (name, description, image_url, category, price)
+SELECT 'Mountain Pour-Over', 'Freshly brewed, hot and strong - delivered right to your room.', '/images/cafe/pour-over.jpg', 'coffee', 100
 WHERE NOT EXISTS (SELECT 1 FROM cafe_items WHERE name = 'Mountain Pour-Over');
 
-INSERT INTO cafe_items (name, description, image_url, category)
-SELECT 'Garden Breakfast Bowl', 'Seasonal, local, and made to be eaten slowly with a view.', '/images/cafe/breakfast-bowl.jpg', 'breakfast'
-WHERE NOT EXISTS (SELECT 1 FROM cafe_items WHERE name = 'Garden Breakfast Bowl');
+INSERT INTO cafe_items (name, description, image_url, category, price)
+SELECT 'Masala Chai', 'Strong, sweet, and milky - brewed the way it''s meant to be, straight to your room.', '/images/cafe/chai.jpg', 'coffee', 50
+WHERE NOT EXISTS (SELECT 1 FROM cafe_items WHERE name = 'Masala Chai');
+
+INSERT INTO cafe_items (name, description, image_url, category, price)
+SELECT 'Bread Omelette', 'Toasted bread, a soft spiced omelette, ketchup on the side. Comfort food, any hour.', '/images/cafe/bread-omelette.jpg', 'breakfast', 100
+WHERE NOT EXISTS (SELECT 1 FROM cafe_items WHERE name = 'Bread Omelette');
+
+INSERT INTO cafe_items (name, description, image_url, category, price)
+SELECT 'Maggi', 'Two-minute noodles, mountain-cabin style - sometimes that''s exactly what you want.', '/images/cafe/maggi.jpg', 'snack', 100
+WHERE NOT EXISTS (SELECT 1 FROM cafe_items WHERE name = 'Maggi');
 
 -- Dropped from the gallery - no replacement photo for this slot
 DELETE FROM gallery_images WHERE image_url IN ('/images/gallery/reading-corner.svg', '/images/gallery/reading-corner.jpg');

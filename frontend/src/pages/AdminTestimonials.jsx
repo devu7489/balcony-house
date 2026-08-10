@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import apiClient from '../api/axiosClient'
 import LoadingScreen from '../components/LoadingScreen'
+import ConfirmDialog from '../components/ConfirmDialog'
+import Select from '../components/Select'
 
 const emptyForm = { guestName: '', quote: '', rating: 5, roomStayed: '', stayDate: '', featured: true }
 
@@ -10,6 +12,7 @@ export default function AdminTestimonials() {
   const [form, setForm] = useState(emptyForm)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [confirmId, setConfirmId] = useState(null)
 
   const load = () => {
     setLoading(true)
@@ -39,8 +42,11 @@ export default function AdminTestimonials() {
   }
 
   const remove = (id) => {
-    if (!window.confirm('Delete this testimonial? This can\'t be undone.')) return
     apiClient.delete(`/admin/testimonials/${id}`).then(load)
+  }
+
+  const toggleFeatured = (t) => {
+    apiClient.post(`/admin/testimonials/${t.id}/${t.featured ? 'unfeature' : 'feature'}`).then(load)
   }
 
   if (loading) return <LoadingScreen label="Loading testimonials" />
@@ -74,13 +80,13 @@ export default function AdminTestimonials() {
         </div>
         <div>
           <label className="block text-xs uppercase tracking-wide text-charcoal/50 mb-1">Rating</label>
-          <select
-            className="w-full border border-stone rounded-lg px-3 py-2"
+          <Select
+            className="w-full px-3 py-2"
             value={form.rating}
             onChange={(e) => setForm({ ...form, rating: e.target.value })}
           >
             {[5, 4, 3, 2, 1].map((r) => <option key={r} value={r}>{r} star{r === 1 ? '' : 's'}</option>)}
-          </select>
+          </Select>
         </div>
         <div>
           <label className="block text-xs uppercase tracking-wide text-charcoal/50 mb-1">Room stayed (optional)</label>
@@ -94,7 +100,7 @@ export default function AdminTestimonials() {
           <label className="block text-xs uppercase tracking-wide text-charcoal/50 mb-1">Stay date (optional)</label>
           <input
             type="date"
-            className="w-full min-w-0 box-border appearance-none bg-white border border-stone rounded-lg px-3 py-2"
+            className="w-full min-w-0 h-11 box-border appearance-none bg-white border border-stone rounded-lg px-3 py-2.5 focus:outline-none focus:border-olive"
             value={form.stayDate}
             onChange={(e) => setForm({ ...form, stayDate: e.target.value })}
           />
@@ -127,9 +133,12 @@ export default function AdminTestimonials() {
           {testimonials.map((t) => (
             <div key={t.id} className="flex items-start justify-between gap-4 px-5 py-4">
               <div>
-                <div className="flex items-center gap-2 mb-1">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <span className="font-medium text-charcoal">{t.guestName}</span>
                   <span className="text-xs text-olive">{'★'.repeat(t.rating)}{'☆'.repeat(5 - t.rating)}</span>
+                  {t.bookingId != null && (
+                    <span className="text-xs text-charcoal/40 border border-stone rounded-full px-2 py-0.5">Verified stay</span>
+                  )}
                   {!t.featured && <span className="text-xs text-charcoal/40 border border-stone rounded-full px-2 py-0.5">Hidden</span>}
                 </div>
                 <p className="text-sm text-charcoal/70 max-w-2xl">"{t.quote}"</p>
@@ -137,16 +146,32 @@ export default function AdminTestimonials() {
                   {t.roomStayed || 'No room noted'}{t.stayDate ? ` · ${new Date(t.stayDate).toLocaleDateString()}` : ''}
                 </p>
               </div>
-              <button
-                onClick={() => remove(t.id)}
-                className="text-xs text-red-600 hover:underline shrink-0"
-              >
-                Delete
-              </button>
+              <div className="flex items-center gap-3 shrink-0">
+                <button
+                  onClick={() => toggleFeatured(t)}
+                  className="text-xs text-olive hover:underline"
+                >
+                  {t.featured ? 'Hide' : 'Feature'}
+                </button>
+                <button
+                  onClick={() => setConfirmId(t.id)}
+                  className="text-xs text-red-600 hover:underline"
+                >
+                  Delete
+                </button>
+              </div>
             </div>
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmId != null}
+        message="Delete this testimonial? This can't be undone."
+        danger
+        onConfirm={() => { const id = confirmId; setConfirmId(null); remove(id) }}
+        onCancel={() => setConfirmId(null)}
+      />
     </div>
   )
 }

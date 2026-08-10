@@ -25,10 +25,12 @@ public record HotelConfig(
 
     public record Contact(String email, String phone, String address) {}
 
-    /** Plain display strings, not parsed/used in any date-time logic - check-in/check-out
-     *  are still DATE-only everywhere in the booking flow (see Booking.checkIn/checkOut);
-     *  these are purely what's shown to guests as the property's stated arrival/departure
-     *  times and general house rules. */
+    /** checkIn/checkOut are still DATE-only everywhere in the booking flow (see
+     *  Booking.checkIn/checkOut) - these are the property's stated arrival/departure
+     *  clock times, shown to guests as-is, and also parsed by BookingService (see its
+     *  checkInTimeOfDay()) so a same-day cancellation after this time counts as a night
+     *  used rather than a free before-check-in cancellation. Expected format: "h:mm a"
+     *  (e.g. "12:00 PM") - an unparseable value falls back to noon rather than failing. */
     public record Policies(String checkInTime, String checkOutTime, List<String> notes) {}
 
     /** See this block's own comment in application.yml for why rate-percent is configurable

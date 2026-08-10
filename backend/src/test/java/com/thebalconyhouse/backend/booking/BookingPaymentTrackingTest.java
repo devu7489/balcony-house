@@ -26,8 +26,8 @@ class BookingPaymentTrackingTest {
     void getFullTotal_includesAddonsAndDiscount() {
         Booking booking = newBooking();
         booking.setAmount(new BigDecimal("21000.00"));
-        booking.setChildcare(1, new BigDecimal("4200.00"));
-        booking.setFullBoard(true, new BigDecimal("7000.00"));
+        booking.setChildcare(1, 7, new BigDecimal("4200.00"));
+        booking.setFullBoard(true, 14, new BigDecimal("7000.00"));
         booking.setDiscount(10, new BigDecimal("3220.00"));
 
         // 21000 + 4200 + 7000 - 3220 = 28980

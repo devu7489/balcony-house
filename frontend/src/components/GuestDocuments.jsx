@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import apiClient from '../api/axiosClient'
 import Select from './Select'
+import ConfirmDialog from './ConfirmDialog'
 
 const DOCUMENT_TYPES = [
   { value: 'AADHAAR', label: 'Aadhaar Card' },
@@ -27,6 +28,7 @@ export default function GuestDocuments({ bookingId, onCountChange }) {
   const [uploadStatus, setUploadStatus] = useState('idle')
   const [uploadError, setUploadError] = useState('')
   const [deletingId, setDeletingId] = useState(null)
+  const [confirmDocId, setConfirmDocId] = useState(null)
 
   const load = () => apiClient.get(`/admin/bookings/${bookingId}/documents`).then(({ data }) => {
     setDocuments(data)
@@ -61,7 +63,6 @@ export default function GuestDocuments({ bookingId, onCountChange }) {
   }
 
   const remove = async (docId) => {
-    if (!window.confirm('Remove this document?')) return
     setDeletingId(docId)
     try {
       await apiClient.delete(`/admin/bookings/${bookingId}/documents/${docId}`)
@@ -94,7 +95,7 @@ export default function GuestDocuments({ bookingId, onCountChange }) {
                   {new Date(d.uploadedAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}
                 </span>
                 <button
-                  onClick={() => remove(d.id)}
+                  onClick={() => setConfirmDocId(d.id)}
                   disabled={deletingId === d.id}
                   className="text-xs text-red-600 hover:underline disabled:opacity-50"
                 >
@@ -107,7 +108,7 @@ export default function GuestDocuments({ bookingId, onCountChange }) {
       )}
 
       <form onSubmit={upload} className="flex flex-col sm:flex-row gap-2">
-        <Select value={documentType} onChange={(e) => setDocumentType(e.target.value)} className="sm:w-44 px-3 py-2 text-sm shrink-0">
+        <Select value={documentType} onChange={(e) => setDocumentType(e.target.value)} className="w-full sm:w-44 px-3 py-2 text-sm shrink-0">
           {DOCUMENT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
         </Select>
         <input
@@ -126,6 +127,14 @@ export default function GuestDocuments({ bookingId, onCountChange }) {
         </button>
       </form>
       {uploadError && <p className="text-xs text-red-600 mt-2">{uploadError}</p>}
+
+      <ConfirmDialog
+        open={confirmDocId != null}
+        message="Remove this document?"
+        danger
+        onConfirm={() => { const id = confirmDocId; setConfirmDocId(null); remove(id) }}
+        onCancel={() => setConfirmDocId(null)}
+      />
     </div>
   )
 }
