@@ -1051,9 +1051,12 @@ public class BookingService {
 
         Property currentProperty = findProperty(booking.getPropertyId());
         BigDecimal currentPerNightRate = roomPricing.priceForStay(currentProperty, booking.getCheckIn(), totalNights);
+        BigDecimal childcareFee = isAddonBearer ? booking.getChildcareFee() : BigDecimal.ZERO;
+        BigDecimal fullBoardFee = isAddonBearer ? booking.getFullBoardFee() : BigDecimal.ZERO;
+        boolean everCheckedIn = booking.getStatus() == BookingStatus.CHECKED_IN;
 
         CancellationPolicy.Result result = CancellationPolicy.evaluate(booking.getCheckIn(), effectiveCancellationDate(booking), totalNights,
-                currentPerNightRate, booking.getDiscountPercent(), payable);
+                currentPerNightRate, childcareFee, fullBoardFee, everCheckedIn, booking.getDiscountPercent(), payable);
         booking.setCancellationPenaltyAmount(result.penaltyAmount());
     }
 
