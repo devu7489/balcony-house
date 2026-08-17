@@ -259,6 +259,18 @@ export default function AdminTripDetail() {
   const paymentRelevant = anyActive ? bookings.filter((b) => b.status !== 'CANCELLED') : bookings
   const allActivePaid = paymentRelevant.length > 0 && paymentRelevant.every((b) => b.paymentStatus === 'PAID')
   const paymentStatus = allActivePaid ? 'PAID' : 'PENDING'
+  // Kids Play Zone/Full Board/In-Room Dining are trip-wide charges billed entirely to one
+  // room (the first added, same as the backend's own isFirstInGroup) rather than split across
+  // rooms - so that room's payments look disproportionately large next to the others with no
+  // explanation unless we spell out why here.
+  const bearer = bookings[0]
+  const bearerAddonLabel = bearer
+    ? [
+        bearer.childrenCount > 0 ? 'Kids Play Zone' : null,
+        bearer.fullBoard ? 'Full Board' : null,
+        Number(bearer.foodOrdersFee) > 0 ? 'In-Room Dining' : null,
+      ].filter(Boolean).join(' & ')
+    : ''
   const allPayments = bookings
     .flatMap((b) => (b.payments || []).map((p) => ({ ...p, roomName: b.propertyName })))
     .sort((a, b) => new Date(a.paidAt) - new Date(b.paidAt))
@@ -320,8 +332,9 @@ export default function AdminTripDetail() {
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div className="flex items-center gap-3">
               <span className="font-serif text-lg">₹{totalAmount.toLocaleString()}</span>
-              {(anyActive || allCancelled) && <PaymentBadge status={paymentStatus} />}
-              {(anyActive || allCancelled) && paymentStatus === 'PAID' && !allCancelled && (
+              <PaymentBadge status={paymentStatus} />
+              {(bookings.every((b) => b.status === 'CHECKED_OUT')
+                || (allCancelled && bookings.reduce((sum, b) => sum + Number(b.cancellationPenaltyAmount || 0), 0) > 0)) && (
                 <Link to={`/admin/invoice/trip/${groupId}`} className="text-sm text-olive hover:underline">
                   View invoice
                 </Link>
@@ -337,14 +350,14 @@ export default function AdminTripDetail() {
                 incl. Full Board &middot; ₹{Number(first.fullBoardFee).toLocaleString()}
               </p>
             )}
-            {(anyActive || allCancelled) && balanceDue !== 0 && amountPaidTotal > 0 && (
+            {balanceDue !== 0 && amountPaidTotal > 0 && (
               <p className="text-sm text-olive w-full">
                 Already paid ₹{amountPaidTotal.toLocaleString()}
                 {balanceDue > 0 && ` · Balance due ₹${balanceDue.toLocaleString()}`}
                 {balanceDue < 0 && ` · Refund due ₹${Math.abs(balanceDue).toLocaleString()}`}
               </p>
             )}
-            {(anyActive || allCancelled) && balanceDue !== 0 && !showPaymentForm && (
+            {balanceDue !== 0 && !showPaymentForm && (
               <button
                 onClick={() => { setPaymentAmount(balanceDue !== 0 ? String(balanceDue) : ''); setShowPaymentForm(true) }}
                 className="text-sm text-olive hover:underline"
@@ -361,6 +374,18 @@ export default function AdminTripDetail() {
           {allPayments.length > 0 && (
             <div className="mt-4 pt-4 border-t border-stone">
               <p className="text-xs uppercase tracking-wide text-charcoal/50 mb-2">Payment history</p>
+              {/* A single note here, not a per-payment tag - individual payments aren't
+                  itemized against specific charges (e.g. a food order added mid-stay gets its
+                  own later payment), so tagging every one of the bearer room's rows with "incl.
+                  X" would claim payments included charges that didn't exist yet when they were
+                  made. This states the true, always-accurate fact instead: which shared trip
+                  charges that room's running total carries in total, not which payment covered
+                  which piece of it. */}
+              {bearerAddonLabel && bookings.length > 1 && (
+                <p className="text-xs text-charcoal/50 mb-2">
+                  {bearer.propertyName}'s total below also carries this trip's shared {bearerAddonLabel} charge.
+                </p>
+              )}
               <div className="space-y-1.5">
                 {allPayments.map((p) => {
                   const isRefund = Number(p.amount) < 0

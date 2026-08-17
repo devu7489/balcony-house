@@ -132,12 +132,27 @@ export default function Checkout() {
           Your rooms are still held — nothing was charged. Try the payment again.
         </p>
         <div className="bg-white border border-stone rounded-xl2 p-6 mb-6 text-left">
-          {confirmed.map((b) => (
-            <div key={b.id} className="flex justify-between text-sm py-2 border-b border-stone last:border-0">
-              <span className="text-charcoal/70">{b.propertyName} &middot; {b.checkIn} &rarr; {b.checkOut}</span>
-              <span className="text-charcoal/80">₹{Number(b.payableTotal ?? b.amount).toLocaleString()}</span>
-            </div>
-          ))}
+          {confirmed.map((b, i) => {
+            // Kids Play Zone/Full Board/In-Room Dining are trip-wide charges billed entirely
+            // to the first room added, not split across rooms - so that room's amount looks
+            // disproportionately large next to the others with no explanation unless we say why.
+            const bearerAddonLabel = i === 0 && confirmed.length > 1
+              ? [
+                  b.childrenCount > 0 ? 'Kids Play Zone' : null,
+                  b.fullBoard ? 'Full Board' : null,
+                  Number(b.foodOrdersFee) > 0 ? 'In-Room Dining' : null,
+                ].filter(Boolean).join(' & ')
+              : ''
+            return (
+              <div key={b.id} className="flex justify-between text-sm py-2 border-b border-stone last:border-0">
+                <span className="text-charcoal/70">
+                  {b.propertyName} &middot; {b.checkIn} &rarr; {b.checkOut}
+                  {bearerAddonLabel && ` (incl. ${bearerAddonLabel})`}
+                </span>
+                <span className="text-charcoal/80">₹{Number(b.payableTotal ?? b.amount).toLocaleString()}</span>
+              </div>
+            )
+          })}
         </div>
         <button
           onClick={retryPayment}
@@ -330,8 +345,9 @@ export default function Checkout() {
       <div className="bg-stone/40 border border-stone rounded-xl2 p-5 mb-6">
         <h2 className="text-sm font-medium text-charcoal/80 mb-1.5">Cancellation policy</h2>
         <p className="text-sm text-charcoal/60">
-          Cancel any time before your check-in date for a full refund. Cancelling after check-in
-          (or not showing up) refunds you for any nights you haven't used yet, day by day.
+          Cancel any time before your check-in date, and before {checkInTime} on the check-in date
+          itself, for a full refund. Cancelling after that (or not showing up) refunds you for any
+          nights you haven't used yet, day by day.
         </p>
       </div>
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import apiClient from '../api/axiosClient'
 import LoadingScreen from '../components/LoadingScreen'
 
@@ -141,6 +142,13 @@ export default function Gallery() {
             ))}
           </div>
         )}
+
+        <div className="mt-16 text-center">
+          <p className="text-charcoal/70 mb-4">Ready to see it in person?</p>
+          <Link to="/stay" className="inline-block px-8 py-3 rounded-full bg-olive text-warmwhite font-medium hover:bg-charcoal transition-colors">
+            Book Your Stay
+          </Link>
+        </div>
       </div>
     </div>
   )

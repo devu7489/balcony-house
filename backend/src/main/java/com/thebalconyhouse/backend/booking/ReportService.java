@@ -1,16 +1,20 @@
 package com.thebalconyhouse.backend.booking;
 
+import com.thebalconyhouse.backend.booking.dto.DailyCollectionDto;
 import com.thebalconyhouse.backend.property.Property;
 import com.thebalconyhouse.backend.property.PropertyRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.stream.Collectors;
 
 /**
@@ -69,6 +73,38 @@ public class ReportService {
             );
         }
         return sb.toString();
+    }
+
+    /**
+     * One entry per calendar day in [from, to] (inclusive, hotel-local), even days with no
+     * payments - so "each day" callers get a complete, gap-free series rather than having to
+     * infer zeros from missing dates. Refunds are negative Payment amounts and net directly
+     * into the method/day they were paid against, so a day that was fully refunded nets to
+     * zero rather than double-counting.
+     */
+    public List<DailyCollectionDto> dailyCollections(LocalDate from, LocalDate to) {
+        Instant start = from.atStartOfDay(hotelZoneId).toInstant();
+        Instant end = to.plusDays(1).atStartOfDay(hotelZoneId).toInstant();
+        List<Payment> payments = paymentRepository.findByPaidAtBetweenOrderByPaidAtAsc(start, end);
+
+        Map<LocalDate, Map<String, BigDecimal>> byMethodPerDay = new TreeMap<>();
+        for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1)) {
+            byMethodPerDay.put(d, new LinkedHashMap<>());
+        }
+        for (Payment p : payments) {
+            LocalDate day = p.getPaidAt().atZone(hotelZoneId).toLocalDate();
+            byMethodPerDay.get(day).merge(p.getMethod(), p.getAmount(), BigDecimal::add);
+        }
+
+        return byMethodPerDay.entrySet().stream()
+                .map(e -> new DailyCollectionDto(e.getKey(), e.getValue(),
+                        e.getValue().values().stream().reduce(BigDecimal.ZERO, BigDecimal::add)))
+                .toList();
+    }
+
+    public DailyCollectionDto todayCollection() {
+        LocalDate today = LocalDate.now(hotelZoneId);
+        return dailyCollections(today, today).get(0);
     }
 
     public String bookingsCsv(LocalDate from, LocalDate to) {

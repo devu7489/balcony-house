@@ -317,7 +317,7 @@ export default function AdminBookingDetail() {
                     <span className="font-serif text-lg">₹{fullTotal.toLocaleString()}</span>
                   )}
                   <PaymentBadge status={booking.paymentStatus} />
-                  {booking.paymentStatus === 'PAID' && booking.status !== 'CANCELLED' && (
+                  {(booking.status === 'CHECKED_OUT' || (booking.status === 'CANCELLED' && Number(booking.cancellationPenaltyAmount) > 0)) && (
                     <Link
                       to={booking.bookingGroupId ? `/admin/invoice/trip/${booking.bookingGroupId}` : `/admin/invoice/booking/${booking.id}`}
                       className="text-sm text-olive hover:underline"

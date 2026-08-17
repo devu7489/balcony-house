@@ -6,14 +6,26 @@ import StatusBadge from '../components/StatusBadge'
 import PaymentBadge from '../components/PaymentBadge'
 import { groupBookings } from '../lib/groupBookings'
 import Select from '../components/Select'
-import { cancellationConfirmMessage } from '../lib/cancellationPolicy'
+import { cancellationConfirmMessage, cancellationTypeLabel } from '../lib/cancellationPolicy'
 import ConfirmDialog from '../components/ConfirmDialog'
 
 const isCancellable = (status) => status === 'CONFIRMED' || status === 'CHECKED_IN'
+// An invoice only means something once the amount owed is final and won't change again -
+// that's either a completed stay (checked out) or a cancellation that actually kept money
+// (a clean full-refund cancellation has nothing to invoice).
+const invoiceEligible = (bookings) =>
+  bookings.every((b) => b.status === 'CHECKED_OUT')
+  || (bookings.every((b) => b.status === 'CANCELLED')
+      && bookings.reduce((sum, b) => sum + Number(b.cancellationPenaltyAmount || 0), 0) > 0)
 const totalAmount = (bookings) =>
   bookings.reduce((sum, b) => sum + Number(b.amount || 0), 0)
   + Number(bookings[0]?.childcareFee || 0)
   + Number(bookings[0]?.fullBoardFee || 0)
+  + Number(bookings[0]?.foodOrdersFee || 0)
+// Once a refund is actually recorded, amountPaid drops to match the penalty and this
+// naturally goes to 0 - so it only ever shows while something is still outstanding.
+const refundDue = (bookings) =>
+  bookings.reduce((sum, b) => sum + Number(b.amountPaid || 0) - Number(b.cancellationPenaltyAmount || 0), 0)
 
 function RoomLine({ b, showDates = true }) {
   return (
@@ -35,6 +47,7 @@ function RoomLine({ b, showDates = true }) {
 export default function MyBookings() {
   const [bookings, setBookings] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
   const [cancellingKey, setCancellingKey] = useState(null)
   const [sortBy, setSortBy] = useState('bookingTime')
   const [confirmDialog, setConfirmDialog] = useState(null)
@@ -49,7 +62,9 @@ export default function MyBookings() {
     })
   }
 
-  const load = () => apiClient.get('/bookings/mine').then(({ data }) => setBookings(data))
+  const load = () => apiClient.get('/bookings/mine')
+    .then(({ data }) => { setBookings(data); setLoadError(false) })
+    .catch(() => setLoadError(true))
 
   useEffect(() => {
     load().finally(() => setLoading(false))
@@ -121,7 +136,9 @@ export default function MyBookings() {
         </p>
       )}
 
-      {bookings.length === 0 ? (
+      {loadError ? (
+        <p className="text-red-600">Couldn't load your bookings — please try refreshing the page.</p>
+      ) : bookings.length === 0 ? (
         <div>
           <p className="text-charcoal/70 mb-6">You haven't booked a stay yet.</p>
           <Link to="/stay" className="inline-block px-7 py-3 rounded-full bg-olive text-warmwhite hover:bg-charcoal transition-colors">
@@ -141,12 +158,23 @@ export default function MyBookings() {
                     <p className="px-4 text-xs text-charcoal/50">Kids Play Zone &middot; {b.childrenCount} child{b.childrenCount === 1 ? '' : 'ren'}</p>
                   )}
                   {b.fullBoard && <p className="px-4 text-xs text-charcoal/50">Full Board</p>}
+                  {cancelled && (b.cancellationType || refundDue([b]) > 0) && (
+                    <p className="px-4 text-xs text-charcoal/50">
+                      {cancellationTypeLabel(b.cancellationType)}
+                      {refundDue([b]) > 0 && `${b.cancellationType ? ' — ' : ''}₹${refundDue([b]).toLocaleString()} refund due`}
+                    </p>
+                  )}
                   <div className="px-4 pb-4 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       {b.amount != null && <span className="text-sm text-charcoal/60">₹{totalAmount([b]).toLocaleString()}</span>}
                       {!cancelled && <PaymentBadge status={b.paymentStatus} />}
                     </div>
                     <div className="flex items-center gap-4">
+                      {invoiceEligible([b]) && (
+                        <Link to={`/invoice/booking/${b.id}`} className="text-xs text-olive hover:underline">
+                          View invoice
+                        </Link>
+                      )}
                       {b.status === 'CHECKED_OUT' && (
                         <Link to={`/leave-review/${b.id}`} className="text-xs text-olive hover:underline">
                           Leave a review
@@ -197,8 +225,25 @@ export default function MyBookings() {
                     {entry.bookings[0].fullBoard && (
                       <p className="text-xs text-charcoal/50 mt-1">incl. Full Board</p>
                     )}
+                    {cancelled && (() => {
+                      const distinctTypes = [...new Set(entry.bookings.map((b) => b.cancellationType).filter(Boolean))]
+                      const typeLabel = distinctTypes.length === 1 ? cancellationTypeLabel(distinctTypes[0]) : null
+                      const tripRefundDue = refundDue(entry.bookings)
+                      if (!typeLabel && tripRefundDue <= 0) return null
+                      return (
+                        <p className="text-xs text-charcoal/50 mt-1">
+                          {typeLabel}
+                          {tripRefundDue > 0 && `${typeLabel ? ' — ' : ''}₹${tripRefundDue.toLocaleString()} refund due`}
+                        </p>
+                      )
+                    })()}
                   </div>
                   <div className="flex items-center gap-4 sm:shrink-0">
+                    {invoiceEligible(entry.bookings) && (
+                      <Link to={`/invoice/trip/${entry.bookingGroupId}`} className="text-xs text-olive hover:underline">
+                        View invoice
+                      </Link>
+                    )}
                     {entry.bookings.every((b) => b.status === 'CHECKED_OUT') && (
                       <Link to={`/leave-review/${entry.bookings[0].id}`} className="text-xs text-olive hover:underline">
                         Leave a review

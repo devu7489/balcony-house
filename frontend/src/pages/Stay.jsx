@@ -5,9 +5,11 @@ import LoadingScreen from '../components/LoadingScreen'
 import Select from '../components/Select'
 import { getCart, setDates as saveDates, addRoom, removeRoom } from '../lib/cart'
 import { todayIso, nextDayIso, tomorrowIso } from '../lib/dates'
+import { useHotelConfig } from '../context/HotelConfigContext'
 
 export default function Stay() {
   const navigate = useNavigate()
+  const { childcareEnabled } = useHotelConfig()
   const [properties, setProperties] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -173,7 +175,10 @@ export default function Stay() {
                           </Select>
                         </label>
                       </div>
-                      <p className="text-xs text-charcoal/40">Kids under 12 stay free (max 2 per room).</p>
+                      <p className="text-xs text-charcoal/40">
+                        Kids under 12 stay free and don't count toward the guest limit above.
+                        {childcareEnabled && ' Want supervised play care instead? Add Kids Play Zone at checkout (max 2 per room).'}
+                      </p>
                       <button
                         onClick={() => handleAdd(p)}
                         className="w-full text-sm px-4 py-2 rounded-full bg-olive text-warmwhite hover:bg-charcoal transition-colors"

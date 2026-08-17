@@ -1,5 +1,6 @@
 package com.thebalconyhouse.backend.booking;
 
+import com.thebalconyhouse.backend.booking.dto.DailyCollectionDto;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -10,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
+import java.util.List;
 
 // Requires ROLE_ADMIN (see SecurityConfig: /api/admin/** -> hasRole("ADMIN")).
 @RestController
@@ -26,6 +28,17 @@ public class AdminReportController {
     public ResponseEntity<String> paymentsCsv(@RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
                                                @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
         return csvResponse(reportService.paymentsCsv(from, to), "payments-" + from + "-to-" + to + ".csv");
+    }
+
+    @GetMapping("/collections")
+    public List<DailyCollectionDto> collections(@RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+                                                 @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return reportService.dailyCollections(from, to);
+    }
+
+    @GetMapping("/collections/today")
+    public DailyCollectionDto collectionsToday() {
+        return reportService.todayCollection();
     }
 
     @GetMapping("/bookings.csv")

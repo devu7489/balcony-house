@@ -96,7 +96,15 @@ public class InvoiceService {
      */
     private InvoiceDto generate(List<Booking> bookings, Long groupId, Long bookingId) {
         List<Booking> active = bookings.stream().filter(b -> b.getStatus() != BookingStatus.CANCELLED).toList();
-        if (active.isEmpty()) {
+        BigDecimal totalCancellationPenalty = bookings.stream()
+                .filter(b -> b.getStatus() == BookingStatus.CANCELLED)
+                .map(b -> b.getCancellationPenaltyAmount() != null ? b.getCancellationPenaltyAmount() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        // A cancelled trip with nothing retained (full refund) has nothing to invoice. One
+        // with a penalty genuinely kept money for a service rendered, so it gets an invoice
+        // too - see createAndPersist/toDto for how that case is billed (the penalty itself,
+        // not the original room rate).
+        if (active.isEmpty() && totalCancellationPenalty.signum() <= 0) {
             throw new IllegalArgumentException("Can't generate an invoice for a cancelled booking");
         }
         boolean allPaid = active.stream().allMatch(b -> b.getPaymentStatus() == PaymentStatus.PAID);
@@ -107,21 +115,31 @@ public class InvoiceService {
         Optional<Invoice> existing = groupId != null
                 ? invoiceRepository.findByBookingGroupId(groupId)
                 : invoiceRepository.findByBookingId(bookingId);
-        Invoice invoice = existing.orElseGet(() -> createAndPersist(active, groupId, bookingId));
+        Invoice invoice = existing.orElseGet(() -> createAndPersist(bookings, active, groupId, bookingId));
         return toDto(invoice, bookings);
     }
 
-    private Invoice createAndPersist(List<Booking> active, Long groupId, Long bookingId) {
-        BigDecimal totalCollected = active.stream()
-                .map(Booking::getAmountPaid)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    private Invoice createAndPersist(List<Booking> bookings, List<Booking> active, Long groupId, Long bookingId) {
+        BigDecimal totalCollected;
+        if (!active.isEmpty()) {
+            totalCollected = active.stream()
+                    .map(Booking::getAmountPaid)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+        } else {
+            // Every room cancelled - invoice the penalty actually retained, not amountPaid
+            // (which may still show an overpayment not yet refunded, or drift once it is -
+            // the penalty itself never changes after cancellation, so it's the stable figure).
+            totalCollected = bookings.stream()
+                    .map(b -> b.getCancellationPenaltyAmount() != null ? b.getCancellationPenaltyAmount() : BigDecimal.ZERO)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+        }
 
         HotelConfig.Gst gst = hotelConfig.gst();
         BigDecimal ratePercent = gst != null && gst.enabled() && gst.ratePercent() != null ? gst.ratePercent() : BigDecimal.ZERO;
 
         GstSplit.Result split = GstSplit.of(totalCollected, ratePercent);
 
-        Booking first = active.get(0);
+        Booking first = !active.isEmpty() ? active.get(0) : bookings.get(0);
         Instant now = Instant.now();
         Invoice invoice = new Invoice(nextInvoiceNumber(now), groupId, bookingId, first.getGuestName(), first.getGuestEmail(),
                 split.taxableValue(), ratePercent, split.cgst(), split.sgst(), totalCollected, now);
@@ -144,27 +162,41 @@ public class InvoiceService {
         List<InvoiceLineDto> lines = new ArrayList<>();
         Booking any = bookings.get(0);
         long nights = ChronoUnit.DAYS.between(any.getCheckIn(), any.getCheckOut());
-        for (Booking b : bookings) {
-            if (b.getStatus() == BookingStatus.CANCELLED) continue;
-            Property property = propertiesById.get(b.getPropertyId());
-            String roomLabel = property != null ? property.getName() : ("Room #" + b.getPropertyId());
-            if (b.getRoomNumber() != null && !b.getRoomNumber().isBlank()) {
-                roomLabel += " (" + b.getRoomNumber() + ")";
+        boolean anyActive = bookings.stream().anyMatch(b -> b.getStatus() != BookingStatus.CANCELLED);
+        if (anyActive) {
+            for (Booking b : bookings) {
+                if (b.getStatus() == BookingStatus.CANCELLED) continue;
+                Property property = propertiesById.get(b.getPropertyId());
+                String roomLabel = property != null ? property.getName() : ("Room #" + b.getPropertyId());
+                if (b.getRoomNumber() != null && !b.getRoomNumber().isBlank()) {
+                    roomLabel += " (" + b.getRoomNumber() + ")";
+                }
+                lines.add(new InvoiceLineDto(roomLabel + " · " + nights + " night" + (nights == 1 ? "" : "s"), b.getAmount()));
             }
-            lines.add(new InvoiceLineDto(roomLabel + " · " + nights + " night" + (nights == 1 ? "" : "s"), b.getAmount()));
-        }
-        Booking addonSource = bookings.stream().filter(b -> b.getStatus() != BookingStatus.CANCELLED).findFirst().orElse(any);
-        if (addonSource.getChildrenCount() > 0 && addonSource.getChildcareFee() != null && addonSource.getChildcareFee().signum() > 0) {
-            lines.add(new InvoiceLineDto("Kids Play Zone · " + addonSource.getChildrenCount()
-                    + " child" + (addonSource.getChildrenCount() == 1 ? "" : "ren") + " · " + addonSource.getChildcareSessions()
-                    + " session" + (addonSource.getChildcareSessions() == 1 ? "" : "s"), addonSource.getChildcareFee()));
-        }
-        if (addonSource.isFullBoard() && addonSource.getFullBoardFee() != null && addonSource.getFullBoardFee().signum() > 0) {
-            lines.add(new InvoiceLineDto("Full Board · " + addonSource.getBuffetSessions()
-                    + " buffet session" + (addonSource.getBuffetSessions() == 1 ? "" : "s"), addonSource.getFullBoardFee()));
-        }
-        if (addonSource.getFoodOrdersFee() != null && addonSource.getFoodOrdersFee().signum() > 0) {
-            lines.add(new InvoiceLineDto("In-Room Dining", addonSource.getFoodOrdersFee()));
+            Booking addonSource = bookings.stream().filter(b -> b.getStatus() != BookingStatus.CANCELLED).findFirst().orElse(any);
+            if (addonSource.getChildrenCount() > 0 && addonSource.getChildcareFee() != null && addonSource.getChildcareFee().signum() > 0) {
+                lines.add(new InvoiceLineDto("Kids Play Zone · " + addonSource.getChildrenCount()
+                        + " child" + (addonSource.getChildrenCount() == 1 ? "" : "ren") + " · " + addonSource.getChildcareSessions()
+                        + " session" + (addonSource.getChildcareSessions() == 1 ? "" : "s"), addonSource.getChildcareFee()));
+            }
+            if (addonSource.isFullBoard() && addonSource.getFullBoardFee() != null && addonSource.getFullBoardFee().signum() > 0) {
+                lines.add(new InvoiceLineDto("Full Board · " + addonSource.getBuffetSessions()
+                        + " buffet session" + (addonSource.getBuffetSessions() == 1 ? "" : "s"), addonSource.getFullBoardFee()));
+            }
+            if (addonSource.getFoodOrdersFee() != null && addonSource.getFoodOrdersFee().signum() > 0) {
+                lines.add(new InvoiceLineDto("In-Room Dining", addonSource.getFoodOrdersFee()));
+            }
+        } else {
+            // Every room cancelled - the penalty already accounts for nights used and any
+            // non-refundable addon consumption (see CancellationPolicy's own comment), so it's
+            // billed as one line per room rather than re-splitting it into room/addon parts.
+            for (Booking b : bookings) {
+                BigDecimal penalty = b.getCancellationPenaltyAmount() != null ? b.getCancellationPenaltyAmount() : BigDecimal.ZERO;
+                if (penalty.signum() <= 0) continue;
+                Property property = propertiesById.get(b.getPropertyId());
+                String roomLabel = property != null ? property.getName() : ("Room #" + b.getPropertyId());
+                lines.add(new InvoiceLineDto(roomLabel + " · Cancellation charge", penalty));
+            }
         }
         BigDecimal totalDiscount = bookings.stream()
                 .filter(b -> b.getStatus() != BookingStatus.CANCELLED && b.getDiscountAmount() != null)

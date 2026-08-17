@@ -4,7 +4,7 @@ import { useHotelConfig } from '../context/HotelConfigContext'
 import apiClient from '../api/axiosClient'
 
 export default function Home() {
-  const { hotelName, tagline, heroImageUrl } = useHotelConfig()
+  const { hotelName, tagline, heroImageUrl, childcareEnabled } = useHotelConfig()
   const [testimonials, setTestimonials] = useState([])
   const testimonialsTrackRef = useRef(null)
 
@@ -36,7 +36,7 @@ export default function Home() {
             >
               {tagline}
             </h1>
-            <p className="max-w-xl text-warmwhite/90 mb-5 sm:mb-8 text-sm sm:text-lg" style={{ textShadow: '0 2px 12px rgba(0,0,0,0.3)' }}>
+            <p className="hidden sm:block max-w-xl text-warmwhite/90 mb-5 sm:mb-8 text-sm sm:text-lg" style={{ textShadow: '0 2px 12px rgba(0,0,0,0.3)' }}>
               Thoughtfully designed mountain stays where every balcony becomes your favorite place to pause, reconnect, and create memories.
             </p>
             <div className="flex flex-wrap gap-3 sm:gap-4">
@@ -56,30 +56,32 @@ export default function Home() {
         <p className="text-charcoal/70 text-center max-w-2xl mx-auto mb-12">
           Two reasons guests keep extending their stay.
         </p>
-        <div className="grid md:grid-cols-2 gap-6">
+        <div className={`grid gap-6 ${childcareEnabled ? 'md:grid-cols-2' : 'max-w-xl mx-auto'}`}>
           <div className="bg-white border border-stone rounded-xl2 p-8">
             <p className="text-sm uppercase tracking-[0.15em] text-olive mb-3">Work from the mountains</p>
             <h3 className="font-serif text-2xl mb-4">Your desk, just with better views.</h3>
-            <p className="text-charcoal/70 mb-6">
+            <p className="hidden sm:block text-charcoal/70 mb-6">
               Every room is work-ready — take the call, hit the deadline, then close the laptop
               and step onto the balcony. No commute, no compromise.
             </p>
-            <ul className="grid grid-cols-2 gap-y-2 text-sm text-charcoal/70">
+            <ul className="hidden sm:grid grid-cols-2 gap-y-2 text-sm text-charcoal/70">
               <li>&middot; Fast, reliable WiFi</li>
               <li>&middot; Dedicated desk &amp; lighting</li>
               <li>&middot; Quiet hours, all day</li>
               <li>&middot; Balcony-friendly calls</li>
             </ul>
           </div>
-          <div className="bg-white border border-stone rounded-xl2 p-8">
-            <p className="text-sm uppercase tracking-[0.15em] text-olive mb-3">Kids Play Zone</p>
-            <h3 className="font-serif text-2xl mb-4">A break for parents, too.</h3>
-            <p className="text-charcoal/70 mb-6">
-              Add supervised on-site play care for 1 or 2 children when you book — one flat fee
-              covers your whole trip, so you can actually relax.
-            </p>
-            <p className="text-sm text-charcoal/60">Choose it as an add-on at checkout, for any room or trip length.</p>
-          </div>
+          {childcareEnabled && (
+            <div className="bg-white border border-stone rounded-xl2 p-8">
+              <p className="text-sm uppercase tracking-[0.15em] text-olive mb-3">Kids Play Zone</p>
+              <h3 className="font-serif text-2xl mb-4">A break for parents, too.</h3>
+              <p className="hidden sm:block text-charcoal/70 mb-6">
+                Add supervised on-site play care for 1 or 2 children when you book — one flat fee
+                covers your whole trip, so you can actually relax.
+              </p>
+              <p className="hidden sm:block text-sm text-charcoal/60">Choose it as an add-on at checkout, for any room or trip length.</p>
+            </div>
+          )}
         </div>
       </section>
 
@@ -136,7 +138,7 @@ export default function Home() {
         </section>
       )}
 
-      <section className="max-w-4xl mx-auto px-6 py-24 text-center">
+      <section className="hidden sm:block max-w-4xl mx-auto px-6 py-24 text-center">
         <h2 className="text-3xl md:text-4xl mb-6 text-balance">Life moves fast. Mountain mornings shouldn't.</h2>
         <p className="text-charcoal/70 leading-relaxed">
           Slow mornings. Balcony coffee. Working with mountain views. Bonfire evenings.

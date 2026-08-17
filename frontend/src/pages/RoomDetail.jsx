@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import apiClient from '../api/axiosClient'
 import LoadingScreen from '../components/LoadingScreen'
 import { useHotelConfig } from '../context/HotelConfigContext'
+import { addRoom } from '../lib/cart'
 
 function RoomGallery({ heroImageUrl, photoUrls }) {
   const images = [heroImageUrl, ...(photoUrls || [])].filter(Boolean)
@@ -117,7 +118,16 @@ export default function RoomDetail() {
       </div>
 
       <button
-        onClick={() => navigate('/stay')}
+        onClick={() => {
+          addRoom({
+            propertyId: property.id,
+            propertyName: property.name,
+            propertyHeroImageUrl: property.heroImageUrl,
+            guests: 1,
+            quantity: 1,
+          })
+          navigate('/stay')
+        }}
         className="px-7 py-3 rounded-full bg-olive text-warmwhite hover:bg-charcoal transition-colors"
       >
         Add to a trip &rarr;
